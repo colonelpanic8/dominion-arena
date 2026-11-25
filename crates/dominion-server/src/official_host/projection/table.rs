@@ -1,6 +1,6 @@
 //! What dominion.games shows of the table besides the players' cards and the Supply: the
 //! Boons' and Hexes' decks, cards setup sets aside, the reminders of what a player has
-//! (States, kept Boons, Artifacts), tokens, and the counts notes keep.
+//! (lasting effects, States, kept Boons, Artifacts), tokens, and the counts notes keep.
 use super::*;
 use dominion_engine::{Kind, Note, PileId, PileView, Set, SetupRole, Token};
 
@@ -160,9 +160,8 @@ pub(super) fn offstage(view: &View<'_>) -> BTreeSet<Card> {
     out
 }
 
-/// What a player is reminded they have: States, kept Boons, the Artifacts they hold, and
-/// lasting effects of those kinds. dominion.games has reminder art for no other card (a
-/// Duration's effect has none), so it reminds of nothing else.
+/// What a player is reminded they have: lasting effects, States, kept Boons and the
+/// Artifacts they hold.
 pub(super) fn reminders(
     view: &View<'_>,
     catalog: &WireCatalog,
@@ -180,7 +179,6 @@ pub(super) fn reminders(
         .iter()
         .filter(|l| l.owner == p.id())
         .map(|l| l.card)
-        .filter(|c| c.is(Types::STATE | Types::BOON | Types::ARTIFACT))
         .chain(p.states().iter().copied())
         .chain(p.boons_kept().iter().copied())
         .chain(held)
@@ -197,9 +195,17 @@ pub(super) fn reminders(
         .collect())
 }
 
-/// Players' tokens: Adventures tokens on piles, and a -1 Card or -$1 token on its
-/// owner's deck while it is out (flipped, as their client reads it). Every token lies in
-/// a zone: their client attaches it there.
+/// Whether the players have Journey tokens: a card or Event in the game turns them.
+pub(super) fn uses_journey(view: &View<'_>) -> bool {
+    [Card::Ranger, Card::Giant, Card::Pilgrimage]
+        .iter()
+        .any(|&c| view.supply_pile(c).is_some() || view.landscapes().contains(&c))
+}
+
+/// Players' tokens: Adventures tokens on piles, the Journey token (flipped face down) in
+/// its owner's hidden token zone, which their client shows beside the player's name, and
+/// a -1 Card or -$1 token on its owner's deck while it is out (flipped, as their client
+/// reads it). Every token lies in a zone: their client attaches it there.
 pub(super) fn tokens(
     view: &View<'_>,
     catalog: &WireCatalog,
@@ -231,6 +237,19 @@ pub(super) fn tokens(
                 owner,
                 zone,
                 is_flipped: false,
+            });
+        }
+        if uses_journey(view) {
+            let hidden = zones
+                .iter()
+                .find(|z| z.kind == zone::TOKENS && z.owner == owner)
+                .map(|z| z.index)
+                .ok_or(ProjectionError::Inconsistent("token zone"))?;
+            tokens.push(model::Token {
+                kind: catalog.symbol("TokenNames", "JOURNEY")?,
+                owner,
+                zone: hidden,
+                is_flipped: !p.journey_face_up(),
             });
         }
         if !(p.minus_card() || p.minus_coin()) {

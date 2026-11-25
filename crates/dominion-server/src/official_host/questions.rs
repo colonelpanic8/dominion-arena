@@ -734,8 +734,8 @@ pub(super) fn prepare(
                 };
                 children.push(choice(
                     description(c, "BUY", story, -1)?,
-                    // Simple: affordable as things stand, as the engine offers it. Their
-                    // client lets only those be clicked unless autobuy is on.
+                    // Each pile the engine offers is affordable now: "simple" to their
+                    // client, which only lets a player click those (unless they autobuy).
                     QuestionElements::BuyableCards(buys.iter().map(|x| (x.0, true)).collect()),
                     0,
                     usize::from(!buys.is_empty()),

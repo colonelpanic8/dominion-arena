@@ -4,7 +4,7 @@
 //! tabs for mats and set-aside cards.
 
 use super::layout::{Geometry, Rect};
-use super::pieces::{CardName, Reminder, TableCard, cube_icon, seat_class};
+use super::pieces::{CardName, LastingReminder, Reminder, TableCard, cube_icon, seat_class};
 use super::supply::{Badges, Tab};
 use super::{Composition, DecksView, Popup, Spot, Ui, mark_at, use_table};
 use crate::app::use_cards;
@@ -95,6 +95,9 @@ fn PlayerBar(player: PlayerEntry, at: Rect, you: bool, active: bool, cubes: usiz
                     }
                 }
                 Badges { badges: p.badges.clone() }
+                for (c, n) in p.lasting.iter() {
+                    LastingReminder { key: "l{c}", name: c.clone(), count: *n }
+                }
                 for c in reminders.iter() {
                     Reminder { key: "r{c}", name: c.clone() }
                 }
@@ -218,7 +221,7 @@ fn tabs(p: &PlayerEntry, show_in_play: bool) -> Vec<(String, String, Zone, Optio
             known: p.play_order.clone(),
             unknown: p.in_play.count.saturating_sub(shown),
         };
-        out.push(("inPlay".into(), "In play".into(), played, None));
+        out.push(("inPlay".into(), "Play Area".into(), played, None));
     }
     for z in &p.zones {
         if z.zone.count > 0 {
@@ -270,7 +273,7 @@ pub fn Opponents(board: Rc<Board>, g: Rc<Geometry>, active: Option<u8>) -> Eleme
     let them = active.and_then(|s| b.others().iter().find(|o| o.seat == s).cloned());
     rsx! {
         for (o, r) in b.others().iter().zip(g.opponent_bars.iter()) {
-            PlayerBar { key: "{o.seat}", player: o.clone(), at: *r, you: false, active: Some(o.seat) == active, cubes: b.project_cubes() }
+            PlayerBar { key: "{o.seat}", player: o.clone(), at: *r, you: false, active: Some(o.seat) == active, cubes: b.project_cubes(o) }
         }
         if let Some(o) = them {
             {
@@ -803,7 +806,7 @@ pub fn YourArea(board: Rc<Board>, g: Rc<Geometry>, ui: Option<Rc<Ui>>, sel: Sele
     let click_answers = ui.as_ref().is_some_and(|u| u.click_answers);
     let ctx = use_table();
     rsx! {
-        PlayerBar { player: you.clone(), at: g.your_bar, you: true, active: false, cubes: board.project_cubes() }
+        PlayerBar { player: you.clone(), at: g.your_bar, you: true, active: false, cubes: board.project_cubes(&you) }
         if you.discard.count > 0 {
             TableCard {
                 name: you.discard_top.clone().unwrap_or_default(),

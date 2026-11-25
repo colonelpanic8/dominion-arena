@@ -97,8 +97,12 @@ pub fn CardView(
     /// A Trait drawn across its pile (`attached`): its name fills the strip.
     #[props(default)]
     inset: bool,
-    /// Upside down across the table, as dominion.games draws an opponent's cards: the
-    /// frame turned, the art and name upright, the name in the type line's place.
+    /// A name to print instead of the card's own (a Boon or Hex deck's strip).
+    #[props(default)]
+    title: Option<String>,
+    /// Turned towards the player across the table, as dominion.games turns the active
+    /// opponent's cards: the frame upside down, the name and type line swapped, the art,
+    /// cost and words upright and the text left off.
     #[props(default)]
     inverted: bool,
     #[props(default = VNode::empty())] children: Element,
@@ -118,7 +122,8 @@ pub fn CardView(
                 pile: pile.as_deref(),
                 attached: attached.as_deref().filter(|_| size == CardSize::Mini),
                 inset,
-                inverted,
+                title: title.as_deref(),
+                inverted: inverted && size == CardSize::Full,
             },
             &assets,
             m.as_ref(),
@@ -280,6 +285,7 @@ struct Placing<'a> {
     pile: Option<&'a [String]>,
     attached: Option<&'a str>,
     inset: bool,
+    title: Option<&'a str>,
     inverted: bool,
 }
 
@@ -296,10 +302,11 @@ fn draw(
         pile,
         attached,
         inset,
+        title,
         inverted,
     } = placing;
     let shape = Shape::of(info);
-    let inverted = inverted && size == CardSize::Full && !shape.landscape;
+    let inverted = inverted && !shape.landscape;
     let ratio = shape.ratio(size);
     let files = assets.card(&info.name);
     let (art, template) = match size {
@@ -322,10 +329,10 @@ fn draw(
     let template = trait_template.as_deref().or(template);
     let fallback = template.is_none();
     let template_box = shape.template(size);
-    let title = title_text(&info.name, assets);
+    let title = title_text(title.unwrap_or(&info.name), assets);
     let mut name_box = shape.name(size);
     // Beside a count: upstream's "shifted-name" box.
-    if shifted && size != CardSize::Full && !shape.landscape {
+    if shifted && (size == CardSize::Micro || (size == CardSize::Mini && !shape.landscape)) {
         name_box.x = 0.24;
         name_box.w = 0.68;
     }
@@ -336,9 +343,8 @@ fn draw(
     if inset && size == CardSize::Micro {
         name_box = layout::ATTACHED_NAME;
     }
-    let types_box = shape.types(size);
-    if inverted && let Some(t) = types_box {
-        name_box = t;
+    if inverted {
+        name_box = layout::INVERTED_NAME.flipped_from(name_box);
     }
     // Upstream prints no cost on a micro card.
     let price = price.filter(|_| size != CardSize::Micro);
@@ -360,8 +366,12 @@ fn draw(
         _ => shape.dark_title,
     };
     let corner_types = shape.landscape && size == CardSize::Full;
-    let types = types_box.map(|rect| {
-        let rect = if inverted { shape.name(size) } else { rect };
+    let types = shape.types(size).map(|rect| {
+        let rect = if inverted {
+            layout::INVERTED_TYPES.flipped_from(rect)
+        } else {
+            rect
+        };
         let line = title_text(&layout::type_line(info), assets);
         let s = fit_line(
             &line,
@@ -394,7 +404,7 @@ fn draw(
     let online = info
         .online_text
         .as_deref()
-        .filter(|t| size == CardSize::Full && !shape.basic && !inverted && !t.is_empty())
+        .filter(|t| size == CardSize::Full && !inverted && !shape.basic && !t.is_empty())
         .map(|t| {
             let lines = text::parse_online(t);
             let rect = shape.online_text();
@@ -416,7 +426,7 @@ fn draw(
         .into_iter()
         .partition(|l| l.kind() == Some(LineKind::Heirloom));
     let text_layout = match (size, shape.text()) {
-        (CardSize::Full, Some(rect)) if !body.is_empty() => {
+        (CardSize::Full, Some(rect)) if !body.is_empty() && !inverted => {
             let max = rect.height_cqw(ratio) * if shape.landscape { 0.37 } else { 0.15 };
             Some((
                 rect,
@@ -426,7 +436,7 @@ fn draw(
         _ => None,
     };
     let heirloom_layout = match (size, heirloom.first()) {
-        (CardSize::Full, Some(line)) if !shape.landscape => {
+        (CardSize::Full, Some(line)) if !shape.landscape && !inverted => {
             let rect = shape.heirloom_band();
             let l = fit_text(
                 std::slice::from_ref(line),
@@ -441,7 +451,7 @@ fn draw(
     };
     let cost = price.map(|p| (shape.cost(size), p));
     // dominion.games' own list where the server has it, else the basic Treasures'.
-    let production = (size == CardSize::Full)
+    let production = (size == CardSize::Full && !inverted)
         .then(|| match &info.online_production {
             Some(p) => Some(p.clone()),
             None if shape.basic && shape.treasure_only => Some(if info.potions > 0 {
@@ -477,7 +487,7 @@ fn draw(
                 div { class: "dc-fb-panel {dark}", style: rect.css() }
             }
         }
-        if let Some(rect) = shape.art(size).map(|r| if inverted { layout::Rect { y: 1.0 - r.y - r.h, ..r } } else { r }) {
+        if let Some(rect) = shape.art(size).map(|r| if inverted { r.flipped() } else { r }) {
             if let Some(src) = art {
                 img {
                     class: "dc-art",
@@ -506,7 +516,11 @@ fn draw(
         }
         {name_node(&title, name_box, name_size, light_title)}
         if let Some(t) = attached {
-            div { class: "dc-attached", style: layout::ATTACHED.css(),
+            // A frame made for a Trait has its banner: the Trait's name alone goes on it.
+            div {
+                class: "dc-attached",
+                class: if trait_template.is_some() { "dc-on-banner" },
+                style: layout::ATTACHED.css(),
                 CardView { name: t.to_string(), size: CardSize::Micro, inset: true }
             }
         }

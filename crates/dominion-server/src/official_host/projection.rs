@@ -238,6 +238,9 @@ fn build(
             slots.resize(size, None);
             zones.push(VisibleZone::new(kind, owner, 0, slots));
         }
+        if table::uses_journey(view) {
+            zones.push(VisibleZone::new(zone::TOKENS, owner, 0, vec![]));
+        }
     }
     zones.push(VisibleZone::new(
         zone::TRASH,

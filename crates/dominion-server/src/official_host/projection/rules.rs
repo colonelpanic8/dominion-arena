@@ -783,8 +783,15 @@ fn repeated_duration_reminders_start_ordering_and_real_ability_associations() {
     play(&mut game, Card::Caravan);
     play(&mut game, Card::Lighthouse);
     let u = update(&game, 0, 1);
-    // dominion.games has no reminder art for a Duration's effect.
-    assert!(u.snapshot.state.players[0].reminders.is_empty());
+    assert_eq!(
+        u.snapshot.state.players[0]
+            .reminders
+            .iter()
+            .find(|r| r.card_name == catalog().card(Card::Haven).unwrap())
+            .unwrap()
+            .frequency,
+        2
+    );
     assert_eq!(
         u.snapshot
             .state
@@ -831,9 +838,8 @@ fn repeated_duration_reminders_start_ordering_and_real_ability_associations() {
                     .iter()
                     .enumerate()
                     .map(|(i, (v, _))| {
-                        let mut case = record(&format!("repeated-haven-start-{i}"), &u, 0, v);
-                        case["expectedSemantic"] = json!({"reminders":{"0":[]}});
-                        case
+                        let mut case=record(&format!("repeated-haven-start-{i}"), &u, 0, v);
+                        case["expectedSemantic"]=json!({"reminders":{"0":[{"name":"Haven","count":2,"blinking":false},{"name":"Caravan","count":1,"blinking":false},{"name":"Lighthouse","count":1,"blinking":false}]}});case
                     })
                     .collect();
                 std::fs::write(path, serde_json::to_vec_pretty(&cases).unwrap()).unwrap();

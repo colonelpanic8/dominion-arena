@@ -28,6 +28,8 @@ export class Arena {
       `assets_dir = ${JSON.stringify(assetsDir)}`,
       `web_dir = ${JSON.stringify(webDir)}`,
       `registration = true`,
+      // Each account registers from its own address (`register`), past the limit per address.
+      `trust_proxy = true`,
       `guests = false`,
       `web_animations = false`,
       `web_sounds = false`,
@@ -81,8 +83,8 @@ export class Arena {
     fs.rmSync(this.dir, { recursive: true, force: true });
   }
 
-  async api(method, route, body, cookie) {
-    const headers = { 'content-type': 'application/json' };
+  async api(method, route, body, cookie, extra = {}) {
+    const headers = { 'content-type': 'application/json', ...extra };
     if (cookie) headers.cookie = cookie;
     const r = await fetch(`${this.url}/api${route}`, {
       method,
@@ -96,20 +98,25 @@ export class Arena {
   }
 
   async register(name, password) {
-    const { cookie } = await this.api('POST', '/auth/register', { name, password });
+    this.registered = (this.registered ?? 0) + 1;
+    const from = { 'x-forwarded-for': `10.0.0.${this.registered}` };
+    const { cookie } = await this.api('POST', '/auth/register', { name, password }, undefined, from);
     return cookie;
   }
 
-  /// Seats `host` and `guest` at a new table with `spec` and starts its game.
-  async startGame(host, guest, spec) {
+  /// Seats `host` and then `guests` at a new table with `spec` and starts its game.
+  async startGame(host, guests, spec) {
     const { json: table } = await this.api(
       'POST',
       '/tables',
-      { spec: { undo: 'off', rated: false, timed: false, randomizeOrder: false, ...spec } },
+      {
+        spec: { undo: 'off', rated: false, timed: false, randomizeOrder: false, ...spec },
+        seats: guests.map(() => 'open'),
+      },
       host,
     );
-    await this.api('POST', `/tables/${table.id}/join`, {}, guest);
-    await this.api('POST', `/tables/${table.id}/ready`, { ready: true }, guest);
+    for (const guest of guests) await this.api('POST', `/tables/${table.id}/join`, {}, guest);
+    for (const guest of guests) await this.api('POST', `/tables/${table.id}/ready`, { ready: true }, guest);
     const { json } = await this.api('POST', `/tables/${table.id}/ready`, { ready: true }, host);
     const game = json.game ?? (await this.api('GET', `/tables/${table.id}`)).json.game;
     if (!game) throw new Error(`table ${table.id} started no game: ${JSON.stringify(json)}`);

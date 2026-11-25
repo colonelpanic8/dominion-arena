@@ -25,8 +25,9 @@ For each scenario (`scenarios.mjs`), `run.mjs`:
    others' turns. `official_server_unreviewed_cards` lets it deal cards whose questions the
    transport doesn't map yet: a scenario using them must stop before any of their
    questions.
-2. Registers Alice and Bob, seats them at a table with the scenario's rules, and plays
-   the scenario's steps over the HTTP API (`drive.mjs`).
+2. Registers the scenario's players (Alice, Bob, then Carol, Dave, Erin and Frank for
+   `players` up to 6), seats them at a table with its rules in that order, and plays its
+   steps over the HTTP API (`drive.mjs`, which lists the steps).
 3. Opens dominion.games' client as Alice (`clients.mjs`). Its page, templates, styles and
    images come from a cache filled from dominion.games on first use
    (`~/.cache/dominion/parity/dominion.games`; `--offline` refuses to fetch). The body
@@ -79,13 +80,16 @@ Village)"). When their client looks wrong, fix the projection, not our client.
 
 ## Limits
 
-- Scenarios can only play (`steps`) with cards whose questions the transport maps
-  (`GET /api/official/coverage`): Base, Intrigue, some of Seaside, Platinum and Colony,
-  Potion and Alchemist, Settlers, Baker, Recruiter, Engineer, Expedition, Cathedral. Other
-  cards appear in opening positions only.
+- Steps play through Arena, so any card can be played on the way, but a scenario must
+  stop at a question the transport maps (`GET /api/official/coverage`); scenarios stop at
+  the turn player's Buy phase (`act`) or a move of their turn.
 - The transport refuses some state outright, so a scenario can't show it yet: the Black
   Market deck, Inheritance's Estate token, more than one Trait on a pile, and Shelters
   chosen at the table. When their client refuses a game, its console log
   (`theirs-console.log`) says why.
+- Their client joins each game already in progress, and some of what it draws then
+  differs from a game it watched being played: it lays out a snapshot's cards before
+  reading their statuses, so a Duration from last turn stacks with a copy played this
+  turn. Our table follows the live game there; don't chase those points.
 - One seat's view (Alice's) at one viewport per run.
 - Animations, hovering and windows (the study view, mats opened) aren't compared yet.

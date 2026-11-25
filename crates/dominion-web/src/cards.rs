@@ -43,6 +43,12 @@ impl CardDb {
         self.by_key.get(&key(name)).map(|&i| &self.cards[i])
     }
 
+    /// Where a card comes in the server's list: by set as released, as dominion.games
+    /// orders its cards (unknown cards last).
+    pub fn order(&self, name: &str) -> usize {
+        self.by_key.get(&key(name)).copied().unwrap_or(usize::MAX)
+    }
+
     /// Possible cards in the same pile, whether named by its top, randomizer or a member.
     pub fn pile_members(&self, name: &str) -> Vec<&CardInfo> {
         let Some(card) = self.get(name) else {

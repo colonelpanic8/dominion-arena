@@ -78,8 +78,7 @@ fn is_way(d: &AgentDecision, cards: &CardDb) -> bool {
         })
 }
 
-/// A Buy phase in which Treasures can still be played: dominion.games asks that first,
-/// and the Supply piles wait for it (no plus signs) though clicking one starts buying.
+/// A Buy phase in which Treasures can still be played: dominion.games asks that first.
 pub fn treasures_first(d: &AgentDecision) -> bool {
     d.kind == "turn"
         && d.phase.as_deref() == Some("buy")

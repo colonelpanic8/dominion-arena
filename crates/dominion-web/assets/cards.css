@@ -24,6 +24,7 @@
 .dc-overlay { inset: 0; z-index: 20; pointer-events: none; }
 .dc-overlay > * { pointer-events: auto; }
 .dc-attached { z-index: 6; }
+.dc-on-banner :is(.dc-bg, .dc-template, .dc-frame) { display: none; }
 
 .dc-art { object-fit: cover; object-position: top; z-index: 1; }
 .dc-art-ph {
@@ -36,7 +37,7 @@
   justify-content: center;
 }
 .dc-template { object-fit: fill; z-index: 2; }
-.dc-inverted { transform: rotate(180deg); }
+.dc-template.dc-inverted { transform: rotate(180deg); }
 
 /* Drawn frames, for cards the cache has no template for. */
 .dc-frame {

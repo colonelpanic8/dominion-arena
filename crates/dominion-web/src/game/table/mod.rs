@@ -613,7 +613,7 @@ fn shape(
         treasures: treasures.len(),
         kingdom: b.supply.kingdom.iter().map(Vec::len).sum(),
         landscapes: supply::wides(b).len(),
-        non_supply: b.non_supply.len(),
+        non_supply: supply::strips(b).len(),
         lowered: settings.web_move_kingdom
             && b.front().is_some()
             && others_turn
