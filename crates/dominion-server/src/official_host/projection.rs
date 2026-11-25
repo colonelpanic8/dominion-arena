@@ -262,6 +262,8 @@ fn build(
             let (owner, kind) = match location {
                 dominion_engine::Zone::Discard(p) => (i32::from(p.0), zone::DISCARD),
                 dominion_engine::Zone::Deck(p) => (i32::from(p.0), zone::DRAW),
+                // Another player's hand they revealed (Pillage).
+                dominion_engine::Zone::Hand(p) => (i32::from(p.0), zone::HAND),
                 _ => {
                     return Err(ProjectionError::UnsupportedState(
                         "candidate zone association".into(),
