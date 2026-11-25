@@ -130,6 +130,9 @@ pub struct Config {
     /// `player` (the account here) and `skill` (its dominion.games skill, mu, not level).
     /// With two or more, ratings are also shown on dominion.games' scale.
     pub official_skill_anchors: Option<Vec<crate::arena::SkillAnchor>>,
+    /// Deal every lobby table's game with this seed, for reproducible tests (default: a
+    /// random seed each game). Never set it on a server people play on.
+    pub table_seed: Option<u64>,
     /// Whether new accounts can be registered (default true).
     pub registration: Option<bool>,
     /// Whether people can play without an account, as guests (default true).
@@ -419,6 +422,7 @@ impl Config {
                 .unwrap_or(DEFAULT_AGENT_SEATS_PER_DAY),
             agent_players: self.agent_players.clone(),
             skill_anchors: self.official_skill_anchors.clone().unwrap_or_default(),
+            table_seed: self.table_seed,
         }
     }
 

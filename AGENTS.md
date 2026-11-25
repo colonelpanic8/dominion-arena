@@ -300,6 +300,8 @@ nix/module.nix            `nixosModules.default`: `services.dominion`, the serve
                           system services
 nix/agents.nix            the agent profiles the module offers by default
 tools/import_cards.py     one-off importer that produced data/cards (kept for reference)
+tools/parity/             `just parity`: our table scored against dominion.games' own 2.3.7
+                          client drawing the same Arena games (see its README)
 ```
 
 ## Web styles

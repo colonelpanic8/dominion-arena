@@ -663,7 +663,8 @@ impl Arena {
             let name = self.db.user_ref(&user).map(|u| u.name);
             return conflict(format!("{} is still in a game", name.unwrap_or_default()));
         }
-        let request = deal_request(&start.spec, start.seats.len(), start.banned);
+        let mut request = deal_request(&start.spec, start.seats.len(), start.banned);
+        request.seed = self.settings.table_seed;
         let (mut config, _) = hub::deal_config(&request)?;
         config.colonies = start.spec.colonies;
         config.shelters = start.spec.shelters;

@@ -839,6 +839,7 @@ max_games = 1000               # serve: the most unfinished games at once
 keep_idle_days = 30            # serve: ... and unfinished games nobody has touched for this long (0: never)
 away_minutes = 5               # serve: in a timed game, the deciding player forfeits after this long disconnected (0: never)
 decision_minutes = 30          # serve: ... or after this long over one decision (0: never)
+# table_seed = 1               # serve: deal every lobby table's game with this seed, for reproducible tests (never on a server people play on)
 session_idle_minutes = 1440    # serve: close an MCP session after this long without a call (0: never)
 agent_socket = "/run/dominion/agents.sock"  # serve, agents: where the runner of the server's agents connects (default: none)
 control_socket = "/run/dominion/control.sock"  # serve, games: where `dominion games` reaches the server; owner only (default: none)
