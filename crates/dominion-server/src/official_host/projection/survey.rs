@@ -254,13 +254,31 @@ fn survey_card(card: Card, seeds: u64) -> (u32, Vec<String>) {
         let mut rng = Rng(seed * 7919 + 17);
         for step in 0..160 {
             let Some(d) = game.pending() else { break };
+            // A table trashed down to nothing can play turns forever without a question.
+            let view = game.view(d.player);
+            if view
+                .players()
+                .any(|p| p.hand_size() + p.deck_size() + p.discard_size() + p.in_play().len() < 5)
+            {
+                break;
+            }
             let decider = d.player.0;
+            if std::env::var("SURVEY_TRACE").is_ok() {
+                eprintln!("step {step} {:?} {:?} {:?}", d.player, d.purpose, d.source);
+            }
             let mut answer = None;
             for seat in 0..game.num_players() as u8 {
+                if std::env::var("SURVEY_TRACE").is_ok() {
+                    eprintln!("  project seat {seat}");
+                }
                 match project_seat(&game, seat, step + 1) {
                     Ok(u) if seat == decider => answer = u.question,
                     Ok(_) => {}
-                    Err(e) => errors.push(e),
+                    Err(e) => {
+                        if errors.len() < 64 {
+                            errors.push(e)
+                        }
+                    }
                 }
             }
             decisions += 1;
@@ -268,9 +286,7 @@ fn survey_card(card: Card, seeds: u64) -> (u32, Vec<String>) {
             if let Some(q) = &answer
                 && let Some(values) = wire_answer(&q.wire, &mut rng)
             {
-                match catch_unwind(AssertUnwindSafe(|| {
-                    q.resolve_at(19, q.wire.index, &values)
-                })) {
+                match catch_unwind(AssertUnwindSafe(|| q.resolve_at(19, q.wire.index, &values))) {
                     Ok(Ok(r)) => match game.pending().unwrap().validate(&r) {
                         Ok(()) => response = Some(r),
                         Err(e) => errors.push(format!(
@@ -286,6 +302,18 @@ fn survey_card(card: Card, seeds: u64) -> (u32, Vec<String>) {
                 }
             }
             let response = response.unwrap_or_else(|| engine_answer(&game, card, &mut rng));
+            if let Ok(dir) = std::env::var("SURVEY_TRACE") {
+                eprintln!("  respond {response:?}");
+                if !dir.is_empty() {
+                    let state = serde_json::to_vec(&game).unwrap();
+                    std::fs::write(format!("{dir}/state.json"), state).unwrap();
+                    std::fs::write(
+                        format!("{dir}/response.json"),
+                        serde_json::to_vec(&response).unwrap(),
+                    )
+                    .unwrap();
+                }
+            }
             if game.respond(response).is_err() {
                 let fallback = engine_answer(&game, card, &mut rng);
                 if game.respond(fallback).is_err() {
@@ -322,6 +350,7 @@ fn transport_survey() {
         .unwrap_or(3);
     let only: Option<Vec<String>> = std::env::var("SURVEY_ONLY")
         .ok()
+        .filter(|s| !s.is_empty())
         .map(|s| s.split(',').map(|x| x.trim().to_lowercase()).collect());
     let mut cards = serde_json::Map::new();
     let mut by_category: std::collections::BTreeMap<String, Vec<String>> = Default::default();
@@ -334,12 +363,24 @@ fn transport_survey() {
     }) {
         if let Some(only) = &only
             && !only.iter().any(|o| *o == card.name().to_lowercase())
-            && !only.iter().any(|o| *o == format!("{:?}", card.set()).to_lowercase())
+            && !only
+                .iter()
+                .any(|o| *o == format!("{:?}", card.set()).to_lowercase())
         {
             continue;
         }
         total += 1;
+        let started = std::time::Instant::now();
         let (decisions, errors) = survey_card(card, seeds);
+        if std::env::var("SURVEY_VERBOSE").is_ok() {
+            eprintln!(
+                "{} {:?} {} errors {:?}",
+                card.name(),
+                started.elapsed(),
+                errors.len(),
+                errors.first()
+            );
+        }
         let mut seen: std::collections::BTreeMap<String, usize> = Default::default();
         for e in &errors {
             *seen.entry(category(e)).or_default() += 1;
