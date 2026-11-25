@@ -55,6 +55,12 @@ is `available`, `off`, or `unavailable`. `asOfMs` is the projection time and
 observed, answered and waited for, so their checks, results and errors are the same.
 Optional `token` parameters are ignored because one process controls one account.
 
+On dominion.games, selecting a `Buy` option with unplayed Treasures can
+automatically play just enough to pay for that purchase. For example, buying
+Scouting Party at $0 with five Coppers in hand can play two Coppers and leave
+the other three in hand. To use all $5 across both Buys, play the five Coppers
+before buying Scouting Party.
+
 `new_game` accepts `players`, `bots`, `kingdom`, and `landscapes`. Every opponent
 must be a server bot: defaults are two players and one bot. It requests unrated
 play with spectators prohibited, verifies the returned rules and membership,

@@ -494,6 +494,9 @@ impl Presentation {
         } else {
             note + &delta(self.previous.as_ref().unwrap(), &text_view)
         };
+        if full && view.game.running && !view.spectating {
+            text.push_str("\nBefore your first purchase, play the Treasures you want for all your planned buys. Use play_treasures when you want to play them all and their order doesn't matter.");
+        }
         if let Some(line) = clock
             .as_ref()
             .filter(|_| {
