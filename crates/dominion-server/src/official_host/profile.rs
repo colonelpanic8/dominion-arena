@@ -111,7 +111,7 @@ fn requirements(card: Card) -> Option<&'static [&'static str]> {
         _ if vanilla(card) && card.def().plus.coffers > 0 => &["coffers"],
         _ if vanilla(card) && card.def().plus.villagers > 0 => &["villagers"],
         _ if vanilla(card) => &[],
-        _ => return None,
+        _ => return super::questions::semantics::set_requirements(card),
     })
 }
 

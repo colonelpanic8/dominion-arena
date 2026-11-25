@@ -2,6 +2,82 @@ use super::{ProjectionError, WireCatalog};
 use dominion_engine::{Card, Decision, DecisionKind, Purpose, View};
 use dominion_online::questions::{CardFrequency, LogArgument};
 
+#[path = "semantics/adventures.rs"]
+mod adventures;
+#[path = "semantics/alchemy.rs"]
+mod alchemy;
+#[path = "semantics/allies.rs"]
+mod allies;
+#[path = "semantics/cornucopia_guilds.rs"]
+mod cornucopia_guilds;
+#[path = "semantics/dark_ages.rs"]
+mod dark_ages;
+#[path = "semantics/empires.rs"]
+mod empires;
+#[path = "semantics/hinterlands.rs"]
+mod hinterlands;
+#[path = "semantics/menagerie.rs"]
+mod menagerie;
+#[path = "semantics/nocturne.rs"]
+mod nocturne;
+#[path = "semantics/plunder.rs"]
+mod plunder;
+#[path = "semantics/promos.rs"]
+mod promos;
+#[path = "semantics/prosperity.rs"]
+mod prosperity;
+#[path = "semantics/renaissance.rs"]
+mod renaissance;
+#[path = "semantics/rising_sun.rs"]
+mod rising_sun;
+#[path = "semantics/seaside.rs"]
+mod seaside;
+
+pub(super) type Binding = (&'static str, &'static str, Vec<LogArgument>);
+
+/// Each set's own bindings, tried after the shared ones below.
+struct SetBindings {
+    binding: fn(&View<'_>, &Decision, &WireCatalog) -> Option<Result<Binding, ProjectionError>>,
+    mode: fn(Card, u8) -> Option<&'static str>,
+    ability: fn(Card, u8) -> Option<&'static str>,
+    symbols: fn(Card) -> &'static [(&'static str, &'static str)],
+    requirements: fn(Card) -> Option<&'static [&'static str]>,
+}
+
+macro_rules! sets {
+    ($($m:ident),*) => {
+        const SETS: &[SetBindings] = &[$(SetBindings {
+            binding: $m::binding,
+            mode: $m::mode,
+            ability: $m::ability,
+            symbols: $m::symbols,
+            requirements: $m::requirements,
+        }),*];
+    };
+}
+sets!(
+    seaside,
+    alchemy,
+    prosperity,
+    hinterlands,
+    promos,
+    dark_ages,
+    cornucopia_guilds,
+    adventures,
+    nocturne,
+    empires,
+    renaissance,
+    menagerie,
+    allies,
+    plunder,
+    rising_sun
+);
+
+/// A card's requirements as a set's module declares them.
+pub(crate) fn set_requirements(card: Card) -> Option<&'static [&'static str]> {
+    SETS.iter().find_map(|s| (s.requirements)(card))
+}
+
 pub(super) fn gap(d: &Decision, feature: &str) -> ProjectionError {
     ProjectionError::Compatibility(super::super::profile::CompatibilityGap {
         feature: "decision-semantic".into(),
@@ -83,7 +159,12 @@ pub(super) fn binding(
         (Some(Cathedral), P::Trash) => ("TRASH", "CATHEDRAL"),
         (Some(Settlers), P::Move) => ("PUT_IN_HAND", "SETTLERS"),
         (Some(BustlingVillage), P::Move) => ("PUT_IN_HAND", "BUSTLING_VILLAGE"),
-        _ => return Err(gap(d, "missing story/shape binding")),
+        _ => {
+            return SETS
+                .iter()
+                .find_map(|s| (s.binding)(view, d, c))
+                .unwrap_or_else(|| Err(gap(d, "missing story/shape binding")));
+        }
     };
     let mut args = vec![];
     if matches!(
@@ -152,13 +233,16 @@ pub(super) fn mode(card: Card, mode: u8) -> Option<&'static str> {
         ],
         Lurker => &["LURKER_TRASH", "LURKER_GAIN"],
         NativeVillage => &["NATIVE_VILLAGE_SET_ASIDE", "NATIVE_VILLAGE_RETURN"],
-        _ => return None,
+        _ => return SETS.iter().find_map(|s| (s.mode)(card, mode)),
     };
     choices.get(usize::from(mode)).copied()
 }
 
 pub(super) fn ability(card: Card, ability: u8) -> Option<&'static str> {
     use Card::*;
+    if let Some(symbol) = SETS.iter().find_map(|s| (s.ability)(card, ability)) {
+        return Some(symbol);
+    }
     if ability != 0 {
         return None;
     }
@@ -351,6 +435,10 @@ pub(crate) fn symbols(card: Card) -> &'static [(&'static str, &'static str)] {
         Card::Vassal => &[("QuestionIds", "VASSAL"), ("QuestionTypes", "PLAY")],
         Card::WishingWell => &[("QuestionIds", "WISHING_WELL"), ("QuestionTypes", "WISH")],
         Card::Workshop => &[("QuestionIds", "WORKSHOP"), ("QuestionTypes", "GAIN")],
-        _ => &[],
+        _ => SETS
+            .iter()
+            .map(|s| (s.symbols)(card))
+            .find(|s| !s.is_empty())
+            .unwrap_or(&[]),
     }
 }
