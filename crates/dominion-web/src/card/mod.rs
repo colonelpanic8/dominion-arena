@@ -539,7 +539,7 @@ fn draw(
             div {
                 class: "dc-cost-box",
                 style: "{rect.css()}font-size:{rect.height_cqw(ratio):.3}cqw;",
-                {cost_node(p, info.variable_cost, info.overpay)}
+                {cost_node(p)}
             }
         }
         if let Some(made) = production {
@@ -588,13 +588,9 @@ fn basic_symbol(info: &CardInfo) -> Element {
     }
 }
 
-fn cost_node(p: Price, variable: bool, overpay: bool) -> Element {
+/// A cost as dominion.games draws it: no mark for a variable cost or overpaying.
+fn cost_node(p: Price) -> Element {
     let coin = p.coins > 0 || (p.potions == 0 && p.debt == 0);
-    let mark = match (variable, overpay) {
-        (true, _) => "*",
-        (false, true) => "+",
-        _ => "",
-    };
     rsx! {
         span { class: "dc-cost",
             if coin {
@@ -609,9 +605,6 @@ fn cost_node(p: Price, variable: bool, overpay: bool) -> Element {
             }
             if p.debt > 0 {
                 span { class: "dc-i dc-debt", "{p.debt}" }
-            }
-            if !mark.is_empty() {
-                span { class: "dc-mark", "{mark}" }
             }
         }
     }
