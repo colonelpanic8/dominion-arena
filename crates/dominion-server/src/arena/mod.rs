@@ -306,6 +306,9 @@ pub struct Arena {
     /// When the slow part of [`Arena::sweep`] last ran.
     swept: Mutex<Option<Instant>>,
     start_checks: Mutex<HashMap<String, Vec<Weak<StartCheck>>>>,
+    /// Draining for a restart: official accounts start no new games (`dominion games
+    /// drain`).
+    draining: std::sync::atomic::AtomicBool,
 }
 
 pub(crate) type StartCheck = dyn Fn(&dominion_engine::GameConfig, &crate::hub::Meta) -> std::result::Result<(), String>
@@ -381,6 +384,7 @@ impl Arena {
             official_transcripts: watch::channel(0).0,
             limits: Limits::default(),
             swept: Mutex::new(None),
+            draining: Default::default(),
             start_checks: Mutex::default(),
         });
         let (on_end, users, ratings) = (

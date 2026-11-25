@@ -20,7 +20,8 @@ use dominion_online::{
 use dominion_protocol::api::{
     OnlineAccountInfo, OnlineAttach, OnlineManagement, OnlineMatching, OnlineMode,
     OnlineObservation, OnlineOpponent, OnlineOutcome, OnlineRating, OnlineRatingPeriod,
-    OnlineRatingPoint, OnlineRatingType, OnlineResult, OnlineResultOpponent, OnlineStart, SeatView,
+    OnlineRatingPoint, OnlineRatingType, OnlineResign, OnlineResult, OnlineResultOpponent,
+    OnlineStart, SeatView,
 };
 use dominion_protocol::lobby::{GameMeta, OfficialAccount, OfficialGame, SeatLevel, UserKind};
 use model::{OfficialModel, model_action, model_seats};
@@ -57,6 +58,9 @@ pub struct Hosted {
     cache: Option<PathBuf>,
     /// The lowest dominion.games level its public searches match.
     min_opponent_level: Option<f64>,
+    /// Where the job of the game it plays is kept, so the same seat resumes it after a
+    /// restart.
+    job_file: Option<PathBuf>,
 }
 
 /// The dominion.games levels of a game's players by seat, asked of the official server as
@@ -154,6 +158,42 @@ impl Hosted {
             recordings: None,
             cache: None,
             min_opponent_level: None,
+            job_file: None,
+        }
+    }
+
+    /// The account keeps its game's job in `file`, to resume it after a restart.
+    pub(crate) fn keep_job(mut self, file: PathBuf) -> Self {
+        self.job_file = Some(file);
+        self
+    }
+
+    /// The job kept for a game in progress when the server last stopped.
+    fn kept_job(&self) -> Option<crate::house::Job> {
+        let text = std::fs::read(self.job_file.as_ref()?).ok()?;
+        serde_json::from_slice(&text)
+            .inspect_err(|e| eprintln!("dominion: official account {}: kept job: {e}", self.id))
+            .ok()
+    }
+
+    fn save_job(&self, job: Option<&crate::house::Job>) {
+        let Some(file) = &self.job_file else { return };
+        let saved = match job.filter(|j| !j.game_id.is_empty()) {
+            Some(job) => {
+                crate::harness::write_private(file, &serde_json::to_vec(job).expect("serializable"))
+            }
+            None => match std::fs::remove_file(file) {
+                Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+                    Err(format!("{}: {e}", file.display()))
+                }
+                _ => Ok(()),
+            },
+        };
+        if let Err(e) = saved {
+            eprintln!(
+                "dominion: official account {}: keeping its job: {e}",
+                self.id
+            );
         }
     }
 
@@ -232,7 +272,8 @@ impl Hosted {
                             super::recordings::dir(&account.state_dir),
                             config.online_cache_dir(),
                         )
-                        .min_opponent_level(account.min_opponent_level),
+                        .min_opponent_level(account.min_opponent_level)
+                        .keep_job(account.state_dir.join("agent-job.json")),
                 ),
                 Err(e) => {
                     eprintln!("dominion: official account {}: {e}", account.id);
@@ -294,29 +335,20 @@ impl Hosted {
             let update = updates.borrow_and_update().clone();
             web.ask_levels(&update);
             web.publish(&update);
+            // The seat that played the game in progress when the server stopped.
+            let mut resume = web.hosted.kept_job();
             loop {
-                tokio::select! {_=lifecycle_stop.cancelled()=>break,changed=updates.changed()=>if changed.is_err(){break;}}
-                let _guard = web.hosted.control.lock().await;
-                let update = updates.borrow_and_update().clone();
-                web.ask_levels(&update);
-                web.publish(&update);
-                if update.error.is_some() || !update.connected {
-                    web.set_job(None);
-                } else if update.reducer.running {
-                    if let Some(job) = web.job()
-                        && job.game_id.is_empty()
-                        && let Err(e) = assign(&web, job.agent, job.options)
-                    {
-                        eprintln!(
-                            "dominion: official account {}: assigning matched game: {e}",
-                            web.hosted.id
-                        );
-                    }
-                } else if !update.searching && web.job().is_some_and(|j| !j.game_id.is_empty()) {
-                    web.set_job(None);
+                {
+                    let _guard = web.hosted.control.lock().await;
+                    let update = updates.borrow_and_update().clone();
+                    web.ask_levels(&update);
+                    web.publish(&update);
+                    follow(&web, &update, &mut resume);
                 }
+                tokio::select! {_=lifecycle_stop.cancelled()=>break,changed=updates.changed()=>if changed.is_err(){break;}}
             }
-            web.set_job(None);
+            // A game still running keeps its job on disk for the next start.
+            web.access.arena.set_official_job(&web.hosted.id, None);
         });
         let api = Router::new()
             .route("/view", get(snapshot))
@@ -363,6 +395,11 @@ struct Access {
 }
 impl Access {
     fn allowed(&self, headers: &HeaderMap) -> Result<(), StatusCode> {
+        self.caller(headers).map(drop)
+    }
+
+    /// Who is managing the account: its owner, or one of the owner's bots.
+    fn caller(&self, headers: &HeaderMap) -> Result<dominion_protocol::lobby::UserRef, StatusCode> {
         let token = crate::http::bearer(headers)
             .or_else(|| crate::http::cookie(headers))
             .ok_or(StatusCode::UNAUTHORIZED)?;
@@ -374,7 +411,7 @@ impl Access {
         if (me.user.kind == UserKind::Registered && me.user.name == self.owner)
             || (me.user.kind == UserKind::Bot && me.user.owner.as_deref() == Some(&self.owner))
         {
-            Ok(())
+            Ok(me.user)
         } else {
             Err(StatusCode::FORBIDDEN)
         }
@@ -617,6 +654,7 @@ impl Web {
         self.access.arena.official_job(&self.hosted.id)
     }
     fn set_job(&self, job: Option<crate::house::Job>) {
+        self.hosted.save_job(job.as_ref());
         self.access.arena.set_official_job(&self.hosted.id, job);
     }
     /// Tells the lobby how the account stands.
@@ -691,6 +729,9 @@ fn management(web: &Web) -> OnlineManagement {
             .filter(|v| v.game.running)
             .and_then(|v| v.game.id.as_deref())
             .and_then(|game| web.access.arena.official_game_agent(&web.hosted.id, game)),
+        game: (view.as_ref())
+            .filter(|v| v.game.running)
+            .and_then(|v| v.game.id.clone()),
         running: view.is_some_and(|v| v.game.running),
         searching: update.connected
             && (update.searching || web.job().is_some_and(|j| j.game_id.is_empty())),
@@ -862,6 +903,50 @@ async fn rating(State(web): State<Web>, Query(query): Query<RatingQuery>) -> Res
             .into_response(),
     }
 }
+/// Keeps the account's job in step with its connection: a searching job becomes the
+/// matched game's, a finished game's ends, and a game's job outlives a dropped connection
+/// or a restart (`resume`), so the seat that plays it goes on with its clock.
+fn follow(web: &Web, update: &Update, resume: &mut Option<crate::house::Job>) {
+    if update.error.is_some() || !update.connected {
+        // Matchmaking ends with the connection; a game resumes on reconnecting.
+        if web.job().is_some_and(|j| j.game_id.is_empty()) {
+            web.set_job(None);
+        }
+        return;
+    }
+    if !update.reducer.running {
+        if !update.searching && web.job().is_some_and(|j| !j.game_id.is_empty()) {
+            web.set_job(None);
+        }
+        return;
+    }
+    let Some(game) = update.view().ok().flatten().and_then(|v| v.game.id) else {
+        return;
+    };
+    match web.job() {
+        Some(job) if job.game_id.is_empty() => {
+            if let Err(e) = assign(web, job.agent, job.options) {
+                eprintln!(
+                    "dominion: official account {}: assigning matched game: {e}",
+                    web.hosted.id
+                );
+            }
+        }
+        Some(job) if job.game_id != game => web.set_job(None),
+        Some(_) => {}
+        None => {
+            if let Some(job) = resume.take_if(|j| j.game_id == game)
+                && web.hosted.check_assignment(&game).is_ok()
+            {
+                eprintln!(
+                    "dominion: official account {}: {} resumes game {game} after a restart",
+                    web.hosted.id, job.agent
+                );
+                web.set_job(Some(job));
+            }
+        }
+    }
+}
 fn refused(error: impl ToString) -> Response {
     (
         StatusCode::CONFLICT,
@@ -902,6 +987,14 @@ fn assign(
         return Err("the running game must resume with the same launch options".into());
     }
     web.hosted.check_assignment(&game_id)?;
+    // The seat playing the game goes on: a new job would stop it and start another
+    // with the clock where it is.
+    if web
+        .job()
+        .is_some_and(|j| j.game_id == game_id && j.agent == agent && j.options == options)
+    {
+        return Ok(());
+    }
     web.set_job(Some(crate::house::Job {
         options,
         official: true,
@@ -928,6 +1021,9 @@ async fn start_game(
     axum::Json(start): axum::Json<OnlineStart>,
 ) -> Response {
     let _guard = web.hosted.control.lock().await;
+    if web.access.arena.draining() {
+        return refused("the server is draining for a restart: no new official games start");
+    }
     if let Some(against) = start.against.clone() {
         // Run to the end even if the request goes away, so no table is left half made.
         let web = web.clone();
@@ -1130,14 +1226,57 @@ async fn reconnect(State(web): State<Web>) -> Response {
     if management(&web).searching {
         return refused("cancel matchmaking before reconnecting");
     }
-    web.set_job(None);
+    // The game's seat keeps its job: it plays on from the fresh snapshot.
     match web.hosted.client.reconnect().await {
         Ok(()) => axum::Json(management(&web)).into_response(),
         Err(e) => refused(e),
     }
 }
-async fn resign(State(web): State<Web>) -> Response {
+/// Resigns the running game, for the owner signed in as themself, naming the game and
+/// why. A bot's key (automation that watches or recovers the account) can't resign it.
+async fn resign(
+    State(web): State<Web>,
+    headers: HeaderMap,
+    axum::Json(body): axum::Json<OnlineResign>,
+) -> Response {
+    let caller = match web.access.caller(&headers) {
+        Ok(caller) => caller,
+        Err(status) => return status.into_response(),
+    };
+    let agent = crate::http::user_agent(&headers).unwrap_or("unknown client");
+    let account = &web.hosted.id;
+    if caller.kind != UserKind::Registered {
+        eprintln!(
+            "dominion: official account {account}: refused resigning for bot {} ({agent})",
+            caller.name
+        );
+        return (
+            StatusCode::FORBIDDEN,
+            axum::Json(dominion_protocol::api::ApiError {
+                error: "only the owner, signed in as themself, resigns an official game".into(),
+            }),
+        )
+            .into_response();
+    }
+    let reason = body.reason.trim();
+    if reason.is_empty() || reason.chars().count() > 200 {
+        return refused("give the reason for resigning (at most 200 characters)");
+    }
     let _guard = web.hosted.control.lock().await;
+    let running = (web.hosted.client.current().view().ok().flatten())
+        .filter(|v| v.game.running)
+        .and_then(|v| v.game.id);
+    if running.as_deref() != Some(body.game.as_str()) {
+        return refused(format!(
+            "game {} is not the running game{}",
+            body.game,
+            running.map_or(String::new(), |g| format!(" ({g})"))
+        ));
+    }
+    eprintln!(
+        "dominion: official account {account}: {} resigns game {} ({agent}): {reason}",
+        caller.name, body.game
+    );
     match web.hosted.client.resign().await {
         Ok(()) => {
             web.set_job(None);

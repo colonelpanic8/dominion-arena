@@ -294,6 +294,7 @@ fn OfficialPanel(account: String) -> Element {
         action_error.set(None);
         confirming.set(false);
         let selected = agent.peek().clone();
+        let game = (management.peek().as_ref()).and_then(|m| m.game.clone());
         let opponent = (against.peek().clone()).map(|account| OnlineOpponent {
             account,
             agent: against_agent.peek().clone(),
@@ -341,7 +342,10 @@ fn OfficialPanel(account: String) -> Element {
                 }
                 Action::Resume(agent) => api::online_attach(account, agent, None).await,
                 Action::Pause => api::online_manage_action(account, "pause").await,
-                Action::Resign => api::online_manage_action(account, "resign").await,
+                Action::Resign => {
+                    let reason = "resigned by the owner from the Automatch tab";
+                    api::online_resign(account, game.unwrap_or_default(), reason).await
+                }
                 Action::Cancel => api::online_manage_action(account, "cancel").await,
                 Action::Reconnect => api::online_manage_action(account, "reconnect").await,
             };

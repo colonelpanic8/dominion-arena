@@ -2917,3 +2917,162 @@ async fn a_paired_table_left_behind_is_left_before_the_next_one_opens() {
     assert_eq!(host.pair_open(99, options).await.unwrap(), 78);
     let _end = server.await.unwrap();
 }
+
+/// The seat playing an official game keeps its job (and its token) through a dropped
+/// connection, the owner's reconnect and a server restart; a draining server starts no
+/// new game; and only the owner, signed in as themself, resigns, naming the game and why.
+#[tokio::test]
+async fn an_agent_seat_outlives_disconnects_and_restarts_and_only_the_owner_resigns() {
+    use dominion_protocol::lobby::Credentials;
+    use std::net::{IpAddr, Ipv4Addr};
+    let (directory, runtime) = active_runtime();
+    let (publish, updates) = watch::channel(runtime.update.clone());
+    let (tx, requests) = mpsc::channel(16);
+    let mut requests = without_levels(requests);
+    let client = Client { tx, updates };
+    let view = client.current().view().unwrap().unwrap();
+    let game = view.game.id.clone().unwrap();
+    // What the server kept of the game's seat when it last stopped.
+    let kept = crate::house::Job {
+        options: Default::default(),
+        official: true,
+        official_account: Some(crate::online::LEGACY_ID.into()),
+        transcript: true,
+        configuration: None,
+        agent: "fixture-agent".into(),
+        brief: None,
+        debrief: None,
+        game_id: game.clone(),
+        seat: view.seat.unwrap(),
+        name: view.you.unwrap().name,
+        token: "kept-token".into(),
+    };
+    let file = directory.path().join("agent-job.json");
+    std::fs::write(&file, serde_json::to_vec(&kept).unwrap()).unwrap();
+    let hosted = crate::online::Hosted::new(
+        client.clone(),
+        crate::online::LEGACY_ID.into(),
+        "fixture-42".into(),
+        "resign-owner".into(),
+    )
+    .keep_job(file.clone());
+    let arena = crate::arena::Arena::open(Arc::new(crate::hub::Hub::default()), Default::default())
+        .unwrap();
+    let ip = IpAddr::V4(Ipv4Addr::LOCALHOST);
+    let credentials = Credentials {
+        name: "resign-owner".into(),
+        password: "fixture-password".into(),
+        invite: None,
+    };
+    let owner = arena.register(ip, &credentials, None).unwrap().1.unwrap();
+    let bot = arena
+        .new_bot(&arena.identify(&owner).unwrap(), "resign-watcher")
+        .unwrap();
+    let (offering, _jobs) = mpsc::unbounded_channel();
+    arena.runner_connected(
+        vec![crate::house::Offer {
+            name: "fixture-agent".into(),
+            about: "fixture".into(),
+            ..Default::default()
+        }],
+        1,
+        offering,
+    );
+    let stop = tokio_util::sync::CancellationToken::new();
+    let router = crate::online::router(
+        &[hosted],
+        arena.clone(),
+        vec!["127.0.0.1".into()],
+        None,
+        stop.clone(),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}/api/online", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, router).await });
+    let job = || arena.official_job(crate::online::LEGACY_ID);
+    let settle = || tokio::time::sleep(Duration::from_millis(50));
+    settle().await;
+    assert_eq!(
+        job(),
+        Some(kept.clone()),
+        "the restarted server resumes the seat"
+    );
+    // A dropped connection and the owner's reconnect keep the seat playing.
+    let mut dropped = client.current();
+    dropped.connected = false;
+    publish.send_replace(dropped);
+    settle().await;
+    assert_eq!(job(), Some(kept.clone()));
+    publish.send_replace(runtime.update.clone());
+    settle().await;
+    let backend = tokio::spawn(async move {
+        match requests.recv().await.unwrap() {
+            Request::Reconnect(reply) => reply.send(Ok(())).unwrap(),
+            _ => panic!("expected a reconnect"),
+        }
+        requests
+    });
+    let http = reqwest::Client::new();
+    let response = http
+        .post(format!("{base}/reconnect"))
+        .bearer_auth(&owner)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    let mut requests = backend.await.unwrap();
+    assert_eq!(job(), Some(kept.clone()));
+    assert!(file.is_file());
+    // Draining: the running game goes on, and no new one starts.
+    assert_eq!(
+        arena.drain(true),
+        vec![(crate::online::LEGACY_ID.to_string(), game.clone())]
+    );
+    let response = http
+        .post(format!("{base}/start"))
+        .bearer_auth(&owner)
+        .json(&serde_json::json!({"agent":"fixture-agent"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::CONFLICT);
+    assert!(response.text().await.unwrap().contains("draining"));
+    arena.drain(false);
+    // A bot's key can watch and manage the account, but not resign its game.
+    let resign = |token: &str, body: serde_json::Value| {
+        http.post(format!("{base}/resign"))
+            .bearer_auth(token)
+            .json(&body)
+    };
+    let why = serde_json::json!({"game": game, "reason": "testing the route"});
+    let status = resign(&bot.key, why.clone()).send().await.unwrap().status();
+    assert_eq!(status, reqwest::StatusCode::FORBIDDEN);
+    let bare = http
+        .post(format!("{base}/resign"))
+        .bearer_auth(&owner)
+        .send()
+        .await
+        .unwrap();
+    assert!(bare.status().is_client_error());
+    for body in [
+        serde_json::json!({"game": "dominion.games:0", "reason": "testing the route"}),
+        serde_json::json!({"game": game, "reason": "  "}),
+    ] {
+        let status = resign(&owner, body).send().await.unwrap().status();
+        assert_eq!(status, reqwest::StatusCode::CONFLICT);
+    }
+    assert!(requests.try_recv().is_err(), "nothing was resigned");
+    assert_eq!(job(), Some(kept.clone()));
+    let backend = tokio::spawn(async move {
+        match requests.recv().await.unwrap() {
+            Request::Resign(reply) => reply.send(Ok(())).unwrap(),
+            _ => panic!("expected a resignation"),
+        }
+    });
+    let status = resign(&owner, why).send().await.unwrap().status();
+    assert_eq!(status, reqwest::StatusCode::OK);
+    backend.await.unwrap();
+    assert_eq!(job(), None);
+    assert!(!file.exists());
+    stop.cancel();
+}

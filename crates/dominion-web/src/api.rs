@@ -757,6 +757,18 @@ pub async fn online_say(account: Option<&str>, text: &str) -> Result<()> {
     let say = Say { text: text.into() };
     imp::send_empty("POST", &online_path(account, "chat"), None, Some(&say)).await
 }
+/// Resigns official account `account`'s running game `game`, saying why.
+pub async fn online_resign(
+    account: Option<&str>,
+    game: String,
+    reason: &str,
+) -> Result<dominion_protocol::api::OnlineManagement> {
+    let resign = dominion_protocol::api::OnlineResign {
+        game,
+        reason: reason.into(),
+    };
+    imp::post(&online_path(account, "resign"), None, &resign).await
+}
 pub async fn online_manage_action(
     account: Option<&str>,
     action: &str,
@@ -765,7 +777,6 @@ pub async fn online_manage_action(
     match action {
         "cancel" => imp::send("DELETE", &path("matchmaking"), None, None::<&()>).await,
         "pause" => imp::send("DELETE", &path("agent"), None, None::<&()>).await,
-        "resign" => imp::post(&path("resign"), None, &()).await,
         "reconnect" => imp::post(&path("reconnect"), None, &()).await,
         _ => Err(ApiError {
             status: 400,
