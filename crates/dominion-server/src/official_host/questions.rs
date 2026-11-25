@@ -418,7 +418,6 @@ pub(super) fn prepare(
             options, min, max, ..
         } if d.purpose == Purpose::Trigger => {
             let triggers = view.pending_triggers();
-            let occasions = view.pending_occasions();
             let mut abilities = vec![];
             let mut targets = vec![];
             let mut optional = false;
@@ -448,14 +447,9 @@ pub(super) fn prepare(
                                 },
                             ])]
                         } else {
-                            semantics::ability_arguments(
-                                view,
-                                t,
-                                occasions.get(usize::from(i)).copied(),
-                                c,
-                            )
-                            .transpose()?
-                            .unwrap_or_default()
+                            semantics::ability_arguments(view, t, usize::from(i), c)
+                                .transpose()?
+                                .unwrap_or_default()
                         };
                         abilities.push(Ability {
                             description_type: if arguments.is_empty() { 1 } else { 2 },
@@ -464,6 +458,10 @@ pub(super) fn prepare(
                                 .source
                                 .and_then(|s| ids.get(&s).copied())
                                 .or_else(|| landscapes.get(&t.card).copied())
+                                // A State is no card on the table to point at.
+                                .or_else(|| {
+                                    (t.card.kind() == dominion_engine::Kind::State).then_some(-1)
+                                })
                                 .ok_or_else(|| {
                                     semantics::gap(d, "ability association unavailable")
                                 })?,
@@ -789,6 +787,24 @@ fn set_choice(
                     min: 1,
                     max: 1,
                     decline: Some(Opt::No),
+                },
+            )
+        }
+        Choice::Names(cards) => {
+            if cards.len() != options.len() {
+                return Err(ProjectionError::Inconsistent("one name per option"));
+            }
+            let names = cards
+                .iter()
+                .map(|&card| c.card(card))
+                .collect::<Result<Vec<_>, _>>()?;
+            (
+                choice(desc, QuestionElements::Names(names), min, max, -1)?,
+                AnswerPlan::Options {
+                    targets: options.to_vec(),
+                    min,
+                    max,
+                    decline: None,
                 },
             )
         }

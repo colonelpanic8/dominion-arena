@@ -1,5 +1,5 @@
 use super::{ProjectionError, WireCatalog};
-use dominion_engine::{Card, Decision, DecisionKind, Occasion, Purpose, Trigger, View};
+use dominion_engine::{Card, Decision, DecisionKind, Purpose, Trigger, View};
 use dominion_online::questions::{CardFrequency, LogArgument};
 
 #[path = "semantics/adventures.rs"]
@@ -81,12 +81,15 @@ pub(super) enum Choice {
     Card(dominion_engine::CardId),
     /// A BUTTON per option under COMPLEX_OR, named by its DeclineButtonIds symbol.
     Buttons(Vec<&'static str>),
+    /// Each option's card, by name (Boons, which have no physical card to point at).
+    Names(Vec<Card>),
 }
 
+/// The view, the trigger and its index among the pending ones.
 type AbilityArguments = fn(
     &View<'_>,
     &Trigger,
-    Option<&Occasion>,
+    usize,
     &WireCatalog,
 ) -> Option<Result<Vec<LogArgument>, ProjectionError>>;
 
@@ -111,12 +114,12 @@ pub(super) fn choice(view: &View<'_>, d: &Decision) -> Option<Choice> {
 pub(super) fn ability_arguments(
     view: &View<'_>,
     t: &Trigger,
-    occasion: Option<&Occasion>,
+    index: usize,
     c: &WireCatalog,
 ) -> Option<Result<Vec<LogArgument>, ProjectionError>> {
     EXTRAS
         .iter()
-        .find_map(|s| (s.ability_arguments)(view, t, occasion, c))
+        .find_map(|s| (s.ability_arguments)(view, t, index, c))
 }
 
 pub(super) fn decline_button(d: &Decision) -> Option<&'static str> {

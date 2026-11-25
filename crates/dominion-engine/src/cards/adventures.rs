@@ -1111,6 +1111,7 @@ fn call(g: &mut Game, f: &mut CardFrame, input: Input) -> Option<Flow> {
                     return Some(Flow::done());
                 }
                 f.pc = 4;
+                f.choice_cost = Some(cost.plus_coins(1));
                 f.ask_pile(piles, false, Purpose::Gain)
             }
             4 => {
@@ -1330,6 +1331,7 @@ fn artificer(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             }
             f.pc = 3;
+            f.choice_cost = Some(exact);
             f.ask_pile(piles, true, Purpose::Gain)
         }
         3 => {

@@ -122,12 +122,27 @@ impl<'a> View<'a> {
     }
 
     /// The occasion each of [`View::pending_triggers`] answers (`[i]`).
-    pub fn pending_occasions(&self) -> Vec<&'a crate::Occasion> {
+    fn pending_occasions(&self) -> Vec<&'a crate::Occasion> {
         match (self.pending(), self.game.stack.last()) {
             (Some(d), Some(Frame::Window(w))) if d.purpose == Purpose::Trigger => {
                 w.asked_occasions().collect()
             }
             _ => vec![],
+        }
+    }
+
+    /// The card the occasion of pending trigger `i` is about, where this player knows it:
+    /// one they gain, wherever it went, or one they can see.
+    pub fn pending_occasion_card(&self, i: usize) -> Option<Card> {
+        let me = self.me?;
+        match **self.pending_occasions().get(i)? {
+            crate::Occasion::Gain { player, card, .. } if player == me => {
+                Some(self.game.card(card))
+            }
+            crate::Occasion::Gain { card, .. }
+            | crate::Occasion::Play { card, .. }
+            | crate::Occasion::AfterPlay { card, .. } => self.card(card),
+            _ => None,
         }
     }
 
@@ -155,6 +170,15 @@ impl<'a> View<'a> {
     /// question this is, for the scripts that count rounds there (Remake, Stonemason).
     pub fn pending_counter(&self) -> Option<i32> {
         Some(self.pending_card_frame()?.s.n)
+    }
+
+    /// A card the asking ability names and everyone has seen, kept by name (`Scratch::card`):
+    /// the Boon Blessed Village or Sacred Grove is giving.
+    pub fn pending_named(&self) -> Option<Card> {
+        let f = self.pending_card_frame()?;
+        matches!(f.card, Card::BlessedVillage | Card::SacredGrove)
+            .then_some(f.s.card)
+            .flatten()
     }
 
     /// A visible card this effect retained across its preceding steps.

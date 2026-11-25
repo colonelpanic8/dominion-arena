@@ -1,6 +1,6 @@
 //! Question bindings for Dark Ages (see `semantics::SETS`).
 use super::{Binding, Choice, ProjectionError, SetExtras, WireCatalog, card_names, cost_bound};
-use dominion_engine::{Card, Decision, DecisionKind, Occasion, Opt, Purpose, Trigger, View};
+use dominion_engine::{Card, Decision, DecisionKind, Opt, Purpose, Trigger, View};
 use dominion_online::questions::LogArgument;
 
 pub(super) const EXTRAS: SetExtras = SetExtras {
@@ -185,7 +185,7 @@ pub(super) fn ability(card: Card, ability: u8) -> Option<&'static str> {
 fn ability_arguments(
     _view: &View<'_>,
     t: &Trigger,
-    _occasion: Option<&Occasion>,
+    _index: usize,
     _c: &WireCatalog,
 ) -> Option<Result<Vec<LogArgument>, ProjectionError>> {
     let cards = match t.card {
@@ -389,9 +389,6 @@ pub(super) fn symbols(card: Card) -> &'static [(&'static str, &'static str)] {
 pub(super) fn requirements(card: Card) -> Option<&'static [&'static str]> {
     use Card::*;
     Some(match card {
-        // Pillage: the attacker picks from another player's revealed hand, which the
-        // projection can't place yet ("candidate zone association").
-        Pillage => return None,
         BanditCamp | Feodum | Fortress | Madman | Marauder | PoorHouse | Sage | Vagrant | Ruins
         | Spoils | OvergrownEstate | Necropolis => &[],
         Altar | Hermit => &["card-selection", "pile-selection", "discard-inspection"],
@@ -424,7 +421,7 @@ pub(super) fn requirements(card: Card) -> Option<&'static [&'static str]> {
             "explicit-cost-bound",
         ],
         Rebuild => &["name-card", "pile-selection", "explicit-cost-bound"],
-        Rogue => &["off-turn-attack", "card-selection"],
+        Pillage | Rogue => &["off-turn-attack", "card-selection"],
         Scavenger => &["semantic-modes", "discard-inspection", "card-selection"],
         Survivors | WanderingMinstrel => &["looking", "ordered-cards", "optional-effect"],
         Urchin => &["off-turn-attack", "card-selection", "optional-ability"],

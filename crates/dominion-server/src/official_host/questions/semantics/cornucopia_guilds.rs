@@ -2,7 +2,7 @@
 use super::{
     Binding, Choice, ProjectionError, SetExtras, WireCatalog, card_names, cost_bound, gap,
 };
-use dominion_engine::{Card, Decision, DecisionKind, Occasion, Opt, Purpose, Trigger, View};
+use dominion_engine::{Card, Decision, DecisionKind, Opt, Purpose, Trigger, View};
 use dominion_online::questions::LogArgument;
 
 pub(super) const EXTRAS: SetExtras = SetExtras {
@@ -212,7 +212,7 @@ pub(super) fn ability(card: Card, ability: u8) -> Option<&'static str> {
 fn ability_arguments(
     view: &View<'_>,
     t: &Trigger,
-    _occasion: Option<&Occasion>,
+    _index: usize,
     c: &WireCatalog,
 ) -> Option<Result<Vec<LogArgument>, ProjectionError>> {
     match (t.card, t.ability) {
