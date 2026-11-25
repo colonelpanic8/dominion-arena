@@ -369,6 +369,7 @@ pub(super) fn symbols(card: Card) -> &'static [(&'static str, &'static str)] {
         Populate => &[("QuestionIds", "POPULATE"), ("QuestionTypes", "GAIN")],
         Pursue => &[("QuestionIds", "PURSUE"), ("QuestionTypes", "WISH")],
         Reap => &[("AbilityNames", "REAP_PLAY")],
+        SeizeTheDay => &[("ExtraTurnTypes", "SEIZE_THE_DAY")],
         Toil => &[
             ("DeclineButtonIds", "TOIL_DONT"),
             ("QuestionIds", "TOIL"),
@@ -448,6 +449,8 @@ pub(super) fn requirements(card: Card) -> Option<&'static [&'static str]> {
         Delay | Reap => &["event", "set-aside", "card-selection", "duration-ability"],
         Desperation => &["event", "semantic-modes"],
         Enclave => &["event", "exile"],
+        Invest => &["event", "exile", "pile-selection", "duration-ability"],
+        SeizeTheDay => &["event", "extra-turn"],
         Enhance => &[
             "event",
             "card-selection",

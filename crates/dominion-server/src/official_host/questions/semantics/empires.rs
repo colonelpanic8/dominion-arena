@@ -444,6 +444,15 @@ pub(super) fn requirements(card: Card) -> Option<&'static [&'static str]> {
         BanditFort | Fountain | Keep | Museum | Obelisk | Orchard | Palace | Tower
         | TriumphalArch | Wall | WolfDen => &["landscape"],
         Tomb => &["landscape", "vp-tokens", "duration-ability"],
+        Aqueduct | Basilica | Baths | Battlefield | Colonnade | DefiledShrine | Labyrinth => {
+            &["landscape", "vp-tokens", "duration-ability"]
+        }
+        Arena => &[
+            "landscape",
+            "vp-tokens",
+            "optional-ability",
+            "card-selection",
+        ],
         MountainPass => &["landscape", "debt", "vp-tokens"],
         _ => return None,
     })
