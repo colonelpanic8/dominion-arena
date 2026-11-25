@@ -81,10 +81,9 @@ Village)"). When their client looks wrong, fix the projection, not our client.
   (`GET /api/official/coverage`): Base, Intrigue, some of Seaside, Platinum and Colony,
   Potion and Alchemist, Settlers, Baker, Recruiter, Engineer, Expedition, Cathedral. Other
   cards appear in opening positions only.
-- The transport refuses some state outright, so a scenario can't show it yet: Artifacts,
-  Boons and Hexes, Prophecies, States, face-down piles (Loot), pile tokens (Embargo,
-  Aqueduct's VP, Adventures tokens), Shelters chosen at the table, and setup notes other
-  than the Bane, Obelisk's and Ferryman's piles. When their client refuses a game, its
-  console log (`theirs-console.log`) says why.
+- The transport refuses some state outright, so a scenario can't show it yet: the Black
+  Market deck, Inheritance's Estate token, more than one Trait on a pile, and Shelters
+  chosen at the table. When their client refuses a game, its console log
+  (`theirs-console.log`) says why.
 - One seat's view (Alice's) at one viewport per run.
 - Animations, hovering and windows (the study view, mats opened) aren't compared yet.
