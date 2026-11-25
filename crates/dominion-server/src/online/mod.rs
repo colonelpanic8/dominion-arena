@@ -70,13 +70,18 @@ pub async fn sync(config: &Config) -> Result<(), String> {
     Ok(())
 }
 
-/// dominion.games' text of each card it has, by our card name (`CardInfo::online_text`):
-/// from `host`'s catalog, else from the verified bundle in its file or the cache, if
-/// there is one.
-pub fn card_texts(
-    config: &Config,
-    host: Option<&crate::official_host::Host>,
-) -> BTreeMap<String, String> {
+/// What dominion.games' client draws on each card it has, by our card name.
+#[derive(Clone, Debug, Default)]
+pub struct OnlineCards {
+    /// `CardInfo::online_text`.
+    pub texts: BTreeMap<String, String>,
+    /// `CardInfo::online_production`.
+    pub productions: BTreeMap<String, String>,
+}
+
+/// [`OnlineCards`] from `host`'s catalog, else from the verified bundle in its file or
+/// the cache, if there is one.
+pub fn online_cards(config: &Config, host: Option<&crate::official_host::Host>) -> OnlineCards {
     let read = || -> Option<Catalog> {
         let path = match &config.official_server_catalog_file {
             Some(path) => path.clone(),
@@ -95,13 +100,19 @@ pub fn card_texts(
                 owned = c;
                 &owned
             }
-            None => return BTreeMap::new(),
+            None => return OnlineCards::default(),
         },
     };
-    dominion_engine::Card::ALL
-        .iter()
-        .filter_map(|c| Some((c.name().to_string(), catalog.text(c.name())?.to_string())))
-        .collect()
+    let by_name = |f: &dyn Fn(&str) -> Option<String>| {
+        dominion_engine::Card::ALL
+            .iter()
+            .filter_map(|c| Some((c.name().to_string(), f(c.name())?)))
+            .collect()
+    };
+    OnlineCards {
+        texts: by_name(&|n| catalog.text(n).map(str::to_string)),
+        productions: by_name(&|n| catalog.production(n).map(str::to_string)),
+    }
 }
 
 fn catalog(config: &Config) -> Result<Arc<Catalog>, String> {

@@ -30,6 +30,7 @@ fn catalog() -> Arc<Catalog> {
         enums: BTreeMap::new(),
         labels: BTreeMap::new(),
         texts: BTreeMap::new(),
+        productions: BTreeMap::new(),
     })
 }
 fn named(id: i32) -> NamedId {

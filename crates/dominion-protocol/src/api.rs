@@ -455,6 +455,10 @@ pub struct CardInfo {
     /// `[2]` coins, `{1}` VP, ...).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub online_text: Option<String>,
+    /// What dominion.games prints in the coins beside the full card's name, when the
+    /// server has its bundle: a number, `P` for a Potion, or its text (`?`, `x2`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub online_production: Option<String>,
 }
 
 /// A printed cost, every component present.

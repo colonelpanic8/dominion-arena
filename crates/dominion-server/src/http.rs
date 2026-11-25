@@ -64,7 +64,7 @@ pub fn router(
         origin: public.map(|u| Arc::new(u.to_ascii_lowercase())),
         official_server: options.official_server.clone(),
         native_web_dir: options.web_dir.clone(),
-        card_texts: options.card_texts.clone(),
+        online_cards: options.online_cards.clone(),
     };
     let api = Router::new()
         .route("/cards", get(cards))
@@ -542,7 +542,7 @@ struct Api {
     origin: Option<Arc<String>>,
     official_server: Option<Arc<crate::official_host::Host>>,
     native_web_dir: Option<std::path::PathBuf>,
-    card_texts: Arc<std::collections::BTreeMap<String, String>>,
+    online_cards: Arc<crate::online::OnlineCards>,
 }
 
 pub(crate) struct Error {
@@ -791,7 +791,7 @@ fn kind_name(kind: Kind) -> &'static str {
     }
 }
 
-fn card_info(card: Card, online_text: Option<String>) -> CardInfo {
+fn card_info(card: Card, online: &crate::online::OnlineCards) -> CardInfo {
     let d = card.def();
     CardInfo {
         name: d.name.into(),
@@ -813,7 +813,8 @@ fn card_info(card: Card, online_text: Option<String>) -> CardInfo {
         removed: d.removed,
         pile: d.pile.map(|p| p.name().into()),
         text: d.text.into(),
-        online_text,
+        online_text: online.texts.get(card.name()).cloned(),
+        online_production: online.productions.get(card.name()).cloned(),
     }
 }
 
@@ -821,7 +822,7 @@ async fn cards(State(api): State<Api>) -> axum::Json<Vec<CardInfo>> {
     axum::Json(
         Card::ALL
             .iter()
-            .map(|&c| card_info(c, api.card_texts.get(c.name()).cloned()))
+            .map(|&c| card_info(c, &api.online_cards))
             .collect(),
     )
 }

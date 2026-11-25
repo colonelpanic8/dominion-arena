@@ -27,6 +27,7 @@ fn catalog() -> Arc<Catalog> {
         enums: BTreeMap::from([("Types".into(), vec!["ACTION".into(), "TREASURE".into()])]),
         labels: BTreeMap::new(),
         texts: BTreeMap::new(),
+        productions: BTreeMap::new(),
     })
 }
 fn snapshot() -> model::Snapshot {

@@ -426,8 +426,18 @@ fn draw(
         _ => None,
     };
     let cost = price.map(|p| (shape.cost(size), p));
-    let production = (size == CardSize::Full && shape.basic && shape.treasure_only)
-        .then_some((info.coins, info.potions));
+    // dominion.games' own list where the server has it, else the basic Treasures'.
+    let production = (size == CardSize::Full)
+        .then(|| match &info.online_production {
+            Some(p) => Some(p.clone()),
+            None if shape.basic && shape.treasure_only => Some(if info.potions > 0 {
+                "P".to_string()
+            } else {
+                info.coins.to_string()
+            }),
+            None => None,
+        })
+        .flatten();
     let symbol =
         (size == CardSize::Full && shape.basic && art.is_none()).then(|| basic_symbol(info));
     let set_icon = (size == CardSize::Full)
@@ -516,19 +526,19 @@ fn draw(
                 {cost_node(p, info.variable_cost, info.overpay)}
             }
         }
-        if let Some((coins, potions)) = production {
+        if let Some(made) = production {
             for (i, rect) in shape.production().into_iter().enumerate() {
                 div {
                     key: "{i}",
                     class: "dc-cost-box",
                     style: "{rect.css()}font-size:{rect.height_cqw(ratio):.3}cqw;",
-                    if potions > 0 {
+                    if made == "P" {
                         span { class: "dc-cost",
                             span { class: "dc-i dc-potion" }
                         }
                     } else {
                         span { class: "dc-cost",
-                            span { class: "dc-i dc-coin", "{coins}" }
+                            span { class: "dc-i dc-coin", "{made}" }
                         }
                     }
                 }

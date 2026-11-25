@@ -519,7 +519,7 @@ async fn serve(config: Config) -> Result<(), String> {
         signal.cancel();
     });
     let official_server = dominion_server::official_host::Host::from_config(&config)?;
-    let card_texts = dominion_server::online::card_texts(&config, official_server.as_deref());
+    let online_cards = dominion_server::online::online_cards(&config, official_server.as_deref());
     let options = Options {
         allowed_hosts: hosts,
         session_idle: config.session_idle(),
@@ -532,7 +532,7 @@ async fn serve(config: Config) -> Result<(), String> {
         agent_socket: config.agent_socket.clone(),
         control_socket: config.control_socket.clone(),
         official_server,
-        card_texts: Arc::new(card_texts),
+        online_cards: Arc::new(online_cards),
         online: dominion_server::online::Hosted::start_all(&config).await?,
     };
     dominion_server::serve(listener, Arc::new(hub), options, stop)
