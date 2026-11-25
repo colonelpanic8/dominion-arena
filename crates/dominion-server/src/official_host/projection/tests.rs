@@ -1240,6 +1240,37 @@ fn states_kept_boons_artifacts_and_tokens_reach_the_receiver() {
 }
 
 #[test]
+fn journey_tokens_reach_the_receiver_face_up_or_down() {
+    let catalog = catalog();
+    let game = Game::new(GameConfig::new(2, kingdom_with(&[Card::Ranger]), 42)).unwrap();
+    let mut state = serde_json::to_value(&game).unwrap();
+    state["players"][1]["journey_face_up"] = json!(false);
+    let game: Game = serde_json::from_value(state).unwrap();
+    for seat in 0..2 {
+        let view = receive(&update(&game, seat, &catalog, 3), &catalog, seat)
+            .reducer
+            .view()
+            .unwrap();
+        let face_up = |index: u8| {
+            view.you
+                .iter()
+                .chain(&view.opponents)
+                .find(|p| p.index == index)
+                .unwrap()
+                .tokens
+                .journey_face_up
+        };
+        assert_eq!((face_up(0), face_up(1)), (Some(true), Some(false)));
+    }
+    let plain = Game::new(config()).unwrap();
+    let view = receive(&update(&plain, 0, &catalog, 3), &catalog, 0)
+        .reducer
+        .view()
+        .unwrap();
+    assert!(view.you.iter().all(|p| p.tokens.journey_face_up.is_none()));
+}
+
+#[test]
 fn setup_set_asides_lie_in_their_zones_and_riverboats_card_is_linked() {
     let catalog = catalog();
     let mut config = GameConfig::new(2, kingdom_with(&[Card::Druid, Card::Riverboat]), 42);
