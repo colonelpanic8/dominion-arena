@@ -704,6 +704,55 @@ pub fn DecisionWindow(g: Rc<Geometry>, ui: Option<Rc<Ui>>, sel: Selection) -> El
     if tray.is_empty() && !u.inter.name_any && !show_order {
         return rsx! {};
     }
+    // Naming a card with every choice on the table: dominion.games' input box alone.
+    if tray.is_empty() && !show_order {
+        let q = query().trim().to_lowercase();
+        let results: Vec<String> = if q.len() >= 2 {
+            cards
+                .nameable()
+                .into_iter()
+                .filter(|n| n.to_lowercase().contains(&q))
+                .take(8)
+                .collect()
+        } else {
+            vec![]
+        };
+        return rsx! {
+            div { class: "dt-name-input", "data-target-group": "name",
+                onclick: move |e| e.stop_propagation(),
+                input {
+                    class: "dt-name-entry",
+                    placeholder: "name a card",
+                    value: "{query}",
+                    oninput: move |e| query.set(e.value()),
+                    onkeydown: move |e| {
+                        if e.key() == Key::Enter {
+                            let q = query();
+                            ctx.name(q.trim());
+                        }
+                    },
+                }
+                if !results.is_empty() {
+                    div { class: "dt-name-gallery",
+                        for n in results.iter() {
+                            {
+                                let name = n.clone();
+                                rsx! {
+                                    div {
+                                        key: "{n}",
+                                        class: "dt-result",
+                                        "data-name-result": "{n}",
+                                        onclick: move |_| ctx.name(&name),
+                                        TableCard { name: n.clone(), size: CardSize::Micro, class: "dt-target dt-tone-name" }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        };
+    }
     if hidden().as_deref() == Some(u.decision.id.as_str()) {
         let (bw, bh) = g.button;
         let r = Rect::new(

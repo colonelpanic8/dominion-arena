@@ -500,6 +500,41 @@ button.dt-bar-rating:hover { border-color: #f0cf7a; background: rgba(240, 207, 1
 .dt-search { flex: 0 0 30%; font: inherit; padding: 0.2em 0.4em; }
 .dt-results { display: flex; flex-wrap: wrap; gap: calc(0.5 * var(--vh)); flex: 1; }
 .dt-result { width: calc(16 * var(--vh)); cursor: pointer; }
+/* Naming a card: dominion.games' entry box, and the cards matching what is typed. */
+.dt-name-entry {
+  position: absolute;
+  left: calc(35 * var(--vw));
+  top: calc(53 * var(--vh));
+  width: calc(18 * var(--vw));
+  height: calc(6 * var(--vh));
+  padding: 0 0 0 calc(1 * var(--vw));
+  z-index: 2000;
+  background: rgba(0, 0, 0, 0.9);
+  opacity: 0.8;
+  border: none;
+  border-bottom: 2px solid #fff;
+  color: #fff;
+  font-family: var(--title);
+  font-size: calc(2.4 * var(--vh));
+  text-transform: uppercase;
+}
+.dt-name-entry::placeholder { color: inherit; }
+.dt-name-entry:hover, .dt-name-entry:focus { opacity: 1; outline: none; }
+.dt-name-gallery {
+  position: absolute;
+  left: calc(17 * var(--vw));
+  top: calc(16 * var(--vh));
+  width: calc(50 * var(--vw));
+  height: calc(30 * var(--vh));
+  z-index: 5000;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: center;
+  justify-content: center;
+  gap: calc(0.5 * var(--vh));
+  background: rgba(0, 0, 0, 0.4);
+  border: 2px solid #fff;
+}
 
 /* The log and what our client keeps under it. */
 .dt-log-wrap {
