@@ -485,6 +485,7 @@ fn upgrade(g: &mut Game, f: &mut CardFrame, input: Input, extra: u8) -> Flow {
             let limit = g
                 .cost_of(f.s.pick.expect("set in step 1"))
                 .plus_coins(extra);
+            f.choice_cost = Some(limit);
             choose_and_gain(
                 f,
                 input,
@@ -740,6 +741,7 @@ fn forge(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                     .map(|&c| u32::from(g.cost_of(c).coins))
                     .sum();
             let total = Cost::coins(sum.min(255) as u8);
+            f.choice_cost = Some(total);
             choose_and_gain(
                 f,
                 input,

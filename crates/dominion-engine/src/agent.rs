@@ -5,7 +5,7 @@ use crate::frame::Frame;
 use crate::game::{
     EndReason, ExtraTurn, Lasting, Mat, Outcome, Pile, Player, Token, Turn, Until, Zone,
 };
-use crate::trigger::Trigger;
+use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Event, Game, PileId, PlayerId, Types};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, VecDeque};
@@ -121,6 +121,16 @@ impl<'a> View<'a> {
         }
     }
 
+    /// The occasion each of [`View::pending_triggers`] answers (`[i]` for `[i]`).
+    pub fn pending_trigger_occasions(&self) -> Vec<&'a Occasion> {
+        match (self.pending(), self.game.stack.last()) {
+            (Some(d), Some(Frame::Window(w))) if d.purpose == Purpose::Trigger => {
+                w.asked_occasions().collect()
+            }
+            _ => vec![],
+        }
+    }
+
     fn pending_card_frame(&self) -> Option<&'a crate::cards::CardFrame> {
         let source = self.pending()?.source?;
         self.game.stack.iter().rev().find_map(|frame| match frame {
@@ -215,6 +225,10 @@ impl<'a> View<'a> {
                 DecisionKind::Cards { candidates, .. } => candidates.contains(&id),
                 _ => false,
             }
+            || self
+                .pending_triggers()
+                .iter()
+                .any(|t| t.source == Some(id) && t.owner == d.player)
     }
 
     /// This player's hand; no cards for someone watching.

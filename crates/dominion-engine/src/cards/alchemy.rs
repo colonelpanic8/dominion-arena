@@ -291,6 +291,7 @@ fn scrying_pool(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             };
             f.s.pick = Some(c);
             f.pc = 2;
+            f.choice_subject = Some(victims[f.s.i]);
             f.ask_yes_or(
                 Purpose::Discard,
                 format!("Discard {} {}", whose(f.player, victims[f.s.i]), g.card(c)),
