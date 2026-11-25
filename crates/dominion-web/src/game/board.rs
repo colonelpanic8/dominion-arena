@@ -60,13 +60,14 @@ impl Board {
             .or_else(|| self.opponents.first().filter(|_| self.watching))
     }
 
-    /// The Project cubes a player bar shows: dominion.games draws one per Project in the
-    /// game, at most two, whoever has bought them.
-    pub fn project_cubes(&self) -> usize {
+    /// The Project cubes `player`'s bar shows: dominion.games gives each player one per
+    /// Project in the game, at most two, and takes one off for each Project they bought.
+    pub fn project_cubes(&self, player: &PlayerEntry) -> usize {
         (self.landscapes.iter())
             .filter(|l| l.kind == "project")
             .count()
             .min(2)
+            .saturating_sub(player.projects.len())
     }
 
     /// The players drawn as opponents: everyone but [`Board::front`].
@@ -1042,14 +1043,13 @@ pub fn board(
         .iter()
         .map(|l| {
             let mut badges = vec![];
-            if let Some(vp) = l.vp {
+            // dominion.games draws a landscape's VP only while it has some.
+            if let Some(vp) = l.vp.filter(|&vp| vp != 0) {
                 badges.push(badge("vp", format!("{vp} VP"), Some(vp)));
             }
-            if let Some(s) = l.suns {
+            // A Prophecy in effect has no Sun tokens left, and dominion.games draws none.
+            if let Some(s) = l.suns.filter(|&s| s > 0) {
                 badges.push(badge("sun", format!("{s} Sun(s)"), Some(s as i32)));
-            }
-            if l.active == Some(true) {
-                badges.push(badge("active", "In effect".into(), None));
             }
             LandscapeEntry {
                 card: l.card.clone(),

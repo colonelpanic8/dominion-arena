@@ -99,7 +99,6 @@ fn badge_short(kind: &str) -> &str {
         "sun" => "☀",
         "trashing" => "Tr",
         "estate" => "Est",
-        "active" => "✓",
         other => other,
     }
 }
@@ -609,11 +608,15 @@ pub fn TableCard(
                 if !counters.is_empty() {
                     Counters { counters: counters.clone(), n: counter_n }
                 }
-                if !badges.is_empty() || !cubes.is_empty() {
+                if !badges.is_empty() {
                     span { class: "dt-tokens",
                         for (i, b) in badges.iter().enumerate() {
                             BadgeView { key: "{i}", badge: b.clone() }
                         }
+                    }
+                }
+                if !cubes.is_empty() {
+                    span { class: "dt-cubes",
                         for (seat, who) in cubes.iter() {
                             Cube { key: "c{seat}", seat: *seat, name: who.clone() }
                         }

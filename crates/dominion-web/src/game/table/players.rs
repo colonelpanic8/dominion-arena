@@ -273,7 +273,7 @@ pub fn Opponents(board: Rc<Board>, g: Rc<Geometry>, active: Option<u8>) -> Eleme
     let them = active.and_then(|s| b.others().iter().find(|o| o.seat == s).cloned());
     rsx! {
         for (o, r) in b.others().iter().zip(g.opponent_bars.iter()) {
-            PlayerBar { key: "{o.seat}", player: o.clone(), at: *r, you: false, active: Some(o.seat) == active, cubes: b.project_cubes() }
+            PlayerBar { key: "{o.seat}", player: o.clone(), at: *r, you: false, active: Some(o.seat) == active, cubes: b.project_cubes(o) }
         }
         if let Some(o) = them {
             {
@@ -806,7 +806,7 @@ pub fn YourArea(board: Rc<Board>, g: Rc<Geometry>, ui: Option<Rc<Ui>>, sel: Sele
     let click_answers = ui.as_ref().is_some_and(|u| u.click_answers);
     let ctx = use_table();
     rsx! {
-        PlayerBar { player: you.clone(), at: g.your_bar, you: true, active: false, cubes: board.project_cubes() }
+        PlayerBar { player: you.clone(), at: g.your_bar, you: true, active: false, cubes: board.project_cubes(&you) }
         if you.discard.count > 0 {
             TableCard {
                 name: you.discard_top.clone().unwrap_or_default(),
