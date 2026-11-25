@@ -734,7 +734,9 @@ pub(super) fn prepare(
                 };
                 children.push(choice(
                     description(c, "BUY", story, -1)?,
-                    QuestionElements::BuyableCards(buys.iter().map(|x| (x.0, false)).collect()),
+                    // Simple: affordable as things stand, as the engine offers it. Their
+                    // client lets only those be clicked unless autobuy is on.
+                    QuestionElements::BuyableCards(buys.iter().map(|x| (x.0, true)).collect()),
                     0,
                     usize::from(!buys.is_empty()),
                     c.symbol("DeclineButtonIds", button)?,
