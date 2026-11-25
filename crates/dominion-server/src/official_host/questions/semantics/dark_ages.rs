@@ -394,11 +394,13 @@ pub(super) fn symbols(card: Card) -> &'static [(&'static str, &'static str)] {
 pub(super) fn requirements(card: Card) -> Option<&'static [&'static str]> {
     use Card::*;
     Some(match card {
+        // The Shelters: shelter setup isn't hosted (`profile::assess_setup`).
+        Hovel | OvergrownEstate => return None,
         BanditCamp | Feodum | Fortress | Madman | Marauder | PoorHouse | Sage | Vagrant | Ruins
-        | Spoils | OvergrownEstate | Necropolis => &[],
+        | Spoils => &[],
         Altar | Hermit => &["card-selection", "pile-selection", "discard-inspection"],
         Armory | BandOfMisfits => &["pile-selection"],
-        Beggar | MarketSquare | Hovel => &["reaction-ability"],
+        Beggar | MarketSquare => &["reaction-ability"],
         Catacombs => &[
             "looking",
             "semantic-modes",
