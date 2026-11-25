@@ -200,6 +200,17 @@ fn feature_symbols(feature: &str) -> &'static [(&'static str, &'static str)] {
             ("QuestionIds", "GAME_MAY_BUY_NONCARDS"),
         ],
         "extra-turn" => &[("ExtraTurnTypes", "OUTPOST")],
+        "favors" => &[("CounterNames", "FAVORS")],
+        "rotate" => &[
+            ("QuestionTypes", "ROTATE"),
+            ("DeclineButtonIds", "DONT_ROTATE"),
+        ],
+        "debt" => &[
+            ("CounterNames", "DEBT"),
+            ("GameButtons", "PAY_OFF_DEBT"),
+            ("QuestionIds", "GAME_PAY_OFF_DEBT"),
+            ("QuestionTypes", "BUTTON"),
+        ],
         _ => &[],
     }
 }

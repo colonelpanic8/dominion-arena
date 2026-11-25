@@ -975,3 +975,7 @@ mod rules;
 #[cfg(test)]
 #[path = "projection/survey.rs"]
 mod survey;
+
+#[cfg(test)]
+#[path = "projection/late_sets.rs"]
+mod late_sets;

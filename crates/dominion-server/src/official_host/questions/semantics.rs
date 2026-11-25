@@ -73,6 +73,49 @@ sets!(
     rising_sun
 );
 
+/// How a set presents a choice of options (yes/no, alternatives) `prepare` has no
+/// generic shape for.
+pub(super) enum ChoiceShape {
+    /// Selecting the card answers `yes`; the decline button answers `no`.
+    Target {
+        card: dominion_engine::CardId,
+        yes: dominion_engine::Opt,
+        no: dominion_engine::Opt,
+        decline: &'static str,
+    },
+    /// A CardModes symbol per option; an empty selection, if declinable, is `decline`.
+    Modes {
+        options: Vec<(dominion_engine::Opt, &'static str)>,
+        decline: Option<(dominion_engine::Opt, &'static str)>,
+    },
+    /// A DeclineButtonIds button per option.
+    Buttons(Vec<(dominion_engine::Opt, &'static str)>),
+    /// A disclosed card per option (one of each name offered).
+    Cards(Vec<(dominion_engine::Opt, dominion_engine::CardId)>),
+    /// A card name per option.
+    Names(Vec<(dominion_engine::Opt, Card)>),
+}
+
+pub(super) fn choice_shape(
+    view: &View<'_>,
+    d: &Decision,
+) -> Option<Result<ChoiceShape, ProjectionError>> {
+    allies::choice_shape(view, d)
+        .or_else(|| plunder::choice_shape(view, d))
+        .or_else(|| rising_sun::choice_shape(view, d))
+}
+
+/// The arguments of a triggered ability whose description names a card or number.
+pub(super) fn ability_arguments(
+    view: &View<'_>,
+    t: &dominion_engine::Trigger,
+    c: &WireCatalog,
+) -> Option<Result<Vec<LogArgument>, ProjectionError>> {
+    allies::ability_arguments(view, t, c)
+        .or_else(|| plunder::ability_arguments(view, t, c))
+        .or_else(|| rising_sun::ability_arguments(view, t, c))
+}
+
 /// A card's requirements as a set's module declares them.
 pub(crate) fn set_requirements(card: Card) -> Option<&'static [&'static str]> {
     SETS.iter().find_map(|s| (s.requirements)(card))
