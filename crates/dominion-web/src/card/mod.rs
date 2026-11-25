@@ -100,6 +100,11 @@ pub fn CardView(
     /// A name to print instead of the card's own (a Boon or Hex deck's strip).
     #[props(default)]
     title: Option<String>,
+    /// Turned towards the player across the table, as dominion.games turns the active
+    /// opponent's cards: the frame upside down, the name and type line swapped, the art,
+    /// cost and words upright and the text left off.
+    #[props(default)]
+    inverted: bool,
     #[props(default = VNode::empty())] children: Element,
 ) -> Element {
     let cards = use_cards();
@@ -118,6 +123,7 @@ pub fn CardView(
                 attached: attached.as_deref().filter(|_| size == CardSize::Mini),
                 inset,
                 title: title.as_deref(),
+                inverted: inverted && size == CardSize::Full,
             },
             &assets,
             m.as_ref(),
@@ -280,6 +286,7 @@ struct Placing<'a> {
     attached: Option<&'a str>,
     inset: bool,
     title: Option<&'a str>,
+    inverted: bool,
 }
 
 fn draw(
@@ -296,8 +303,10 @@ fn draw(
         attached,
         inset,
         title,
+        inverted,
     } = placing;
     let shape = Shape::of(info);
+    let inverted = inverted && !shape.landscape;
     let ratio = shape.ratio(size);
     let files = assets.card(&info.name);
     let (art, template) = match size {
@@ -334,6 +343,9 @@ fn draw(
     if inset && size == CardSize::Micro {
         name_box = layout::ATTACHED_NAME;
     }
+    if inverted {
+        name_box = layout::INVERTED_NAME.flipped_from(name_box);
+    }
     // Upstream prints no cost on a micro card.
     let price = price.filter(|_| size != CardSize::Micro);
     let fill = match size {
@@ -355,6 +367,11 @@ fn draw(
     };
     let corner_types = shape.landscape && size == CardSize::Full;
     let types = shape.types(size).map(|rect| {
+        let rect = if inverted {
+            layout::INVERTED_TYPES.flipped_from(rect)
+        } else {
+            rect
+        };
         let line = title_text(&layout::type_line(info), assets);
         let s = fit_line(
             &line,
@@ -387,7 +404,7 @@ fn draw(
     let online = info
         .online_text
         .as_deref()
-        .filter(|t| size == CardSize::Full && !shape.basic && !t.is_empty())
+        .filter(|t| size == CardSize::Full && !inverted && !shape.basic && !t.is_empty())
         .map(|t| {
             let lines = text::parse_online(t);
             let rect = shape.online_text();
@@ -408,7 +425,7 @@ fn draw(
         .into_iter()
         .partition(|l| l.kind() == Some(LineKind::Heirloom));
     let text_layout = match (size, shape.text()) {
-        (CardSize::Full, Some(rect)) if !body.is_empty() => {
+        (CardSize::Full, Some(rect)) if !body.is_empty() && !inverted => {
             let max = rect.height_cqw(ratio) * if shape.landscape { 0.37 } else { 0.15 };
             Some((
                 rect,
@@ -418,7 +435,7 @@ fn draw(
         _ => None,
     };
     let heirloom_layout = match (size, heirloom.first()) {
-        (CardSize::Full, Some(line)) if !shape.landscape => {
+        (CardSize::Full, Some(line)) if !shape.landscape && !inverted => {
             let rect = shape.heirloom_band();
             let l = fit_text(
                 std::slice::from_ref(line),
@@ -433,7 +450,7 @@ fn draw(
     };
     let cost = price.map(|p| (shape.cost(size), p));
     // dominion.games' own list where the server has it, else the basic Treasures'.
-    let production = (size == CardSize::Full)
+    let production = (size == CardSize::Full && !inverted)
         .then(|| match &info.online_production {
             Some(p) => Some(p.clone()),
             None if shape.basic && shape.treasure_only => Some(if info.potions > 0 {
@@ -468,7 +485,7 @@ fn draw(
                 div { class: "dc-fb-panel {dark}", style: rect.css() }
             }
         }
-        if let Some(rect) = shape.art(size) {
+        if let Some(rect) = shape.art(size).map(|r| if inverted { r.flipped() } else { r }) {
             if let Some(src) = art {
                 img {
                     class: "dc-art",
@@ -488,6 +505,7 @@ fn draw(
         if let Some(src) = template {
             img {
                 class: "dc-template",
+                class: if inverted { "dc-inverted" },
                 src: url(src),
                 loading: "lazy",
                 alt: "",

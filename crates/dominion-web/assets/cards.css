@@ -36,6 +36,7 @@
   justify-content: center;
 }
 .dc-template { object-fit: fill; z-index: 2; }
+.dc-template.dc-inverted { transform: rotate(180deg); }
 
 /* Drawn frames, for cards the cache has no template for. */
 .dc-frame {

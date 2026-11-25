@@ -414,6 +414,7 @@ pub fn TableCard(
                 CardView {
                     name: name.clone(),
                     size,
+                    inverted,
                     cost: cost.clone(),
                     shifted: count.is_some() && size != CardSize::Full,
                     pile: pile.clone(),
@@ -463,6 +464,7 @@ pub fn TableCard(
             class: if clickable { "dt-click" },
             class: if wide { "dt-wide" },
             class: if inverted { "dt-inverted" },
+            class: if inverted && back { "dt-turned" },
             class: if at.is_some() { "dt-at" },
             style: "{style}{z_style}",
             "data-name": "{name}",
