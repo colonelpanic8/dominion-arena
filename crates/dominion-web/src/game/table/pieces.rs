@@ -291,6 +291,7 @@ pub fn TableCard(
         picked,
         ordered,
         tone,
+        copy,
     } = mark;
     let n_menu = name.clone();
     let n_inspect = name.clone();
@@ -407,7 +408,11 @@ pub fn TableCard(
             onclick: move |e| {
                 if let Some(t) = target {
                     e.stop_propagation();
-                    ctx.act(t);
+                    if copy && whole_picked {
+                        ctx.unpick(t);
+                    } else {
+                        ctx.act(t);
+                    }
                 } else if let Some(p) = open.clone() {
                     e.stop_propagation();
                     ctx.open(p);

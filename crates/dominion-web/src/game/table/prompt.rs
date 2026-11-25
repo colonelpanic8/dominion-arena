@@ -31,6 +31,36 @@ const SELECT_ALL: [&str; 11] = [
     "Marchland",
 ];
 
+/// The cards whose questions dominion.games' window shows stacked, like cards together;
+/// it draws every other question's cards one by one.
+const STACKED_WINDOWS: [&str; 25] = [
+    "Harbinger",
+    "Hermit",
+    "Scavenger",
+    "Annex",
+    "Bustling Village",
+    "Settlers",
+    "Herald",
+    "Inn",
+    "Counting House",
+    "The Moon's Gift",
+    "Crypt",
+    "Necromancer",
+    "Mountain Village",
+    "Star Chart",
+    "March",
+    "Order of Astrologers",
+    "Order of Masons",
+    "Herb Gatherer",
+    "Courier",
+    "Bury",
+    "Prepare",
+    "Orb",
+    "Fated",
+    "Avoid",
+    "Joust",
+];
+
 /// Number decisions with more values than this get a slider instead of a button each.
 const MAX_NUMBER_BUTTONS: usize = 6;
 
@@ -618,9 +648,27 @@ pub fn DecisionWindow(g: Rc<Geometry>, ui: Option<Rc<Ui>>, sel: Selection) -> El
             }
         };
     }
-    let wide: Vec<bool> = tray
+    // Each card drawn alone, unless the question is one dominion.games stacks.
+    let stacked = u
+        .decision
+        .source
+        .as_deref()
+        .is_some_and(|c| STACKED_WINDOWS.contains(&c));
+    let slots: Vec<(usize, Option<usize>)> = tray
         .iter()
-        .map(|&i| {
+        .flat_map(|&i| {
+            let t = &u.inter.targets[i];
+            let n = t.options.len();
+            if t.card.is_some() && n > 1 && !stacked {
+                (0..n).map(|k| (i, Some(k))).collect::<Vec<_>>()
+            } else {
+                vec![(i, None)]
+            }
+        })
+        .collect();
+    let wide: Vec<bool> = slots
+        .iter()
+        .map(|&(i, _)| {
             u.inter.targets[i]
                 .card
                 .as_deref()
@@ -644,7 +692,7 @@ pub fn DecisionWindow(g: Rc<Geometry>, ui: Option<Rc<Ui>>, sel: Selection) -> El
         win.y = (win.y - extra).max(0.0);
     }
     let cards_box = Rect::new(win.x, win.y, win.w, win.h - extra);
-    let row = g.window_row(&cards_box, tray.len(), &wide, 0.0);
+    let row = g.window_row(&cards_box, slots.len(), &wide, 0.0);
     let q = query().trim().to_lowercase();
     let results: Vec<String> = if u.inter.name_any && q.len() >= 2 {
         cards
@@ -681,10 +729,13 @@ pub fn DecisionWindow(g: Rc<Geometry>, ui: Option<Rc<Ui>>, sel: Selection) -> El
                 onclick: move |_| hidden.set(Some(id.clone())),
                 "✕"
             }
-            for (k, &i) in tray.iter().enumerate() {
+            for (k, &(i, copy)) in slots.iter().enumerate() {
                 {
                     let t = &u.inter.targets[i];
-                    let mark = u.mark_target(&sel, i);
+                    let mark = match copy {
+                        Some(c) => u.mark_copy(&sel, i, c),
+                        None => u.mark_target(&sel, i),
+                    };
                     let ways = u.ways_of(Some(i));
                     let label = match (&t.card, &t.zone) {
                         (Some(c), Some(z)) if &t.label == c && !matches!(z.as_str(), "deck" | "hand" | "looking") => {
@@ -693,12 +744,12 @@ pub fn DecisionWindow(g: Rc<Geometry>, ui: Option<Rc<Ui>>, sel: Selection) -> El
                         (Some(c), _) if &t.label == c => None,
                         _ => Some(t.label.clone()),
                     };
-                    let count = (t.options.len() > 1).then_some(t.options.len() as u32);
+                    let count = (copy.is_none() && t.options.len() > 1).then_some(t.options.len() as u32);
                     let w = if wide[k] { row.w * 2.0 } else { row.w };
                     let h = if wide[k] { w * super::layout::WIDE } else { row.h };
                     rsx! {
                         TableCard {
-                            key: "{i}",
+                            key: "{i}:{copy:?}",
                             name: t.card.clone().unwrap_or_default(),
                             size: CardSize::Full,
                             back: t.card.is_none(),

@@ -55,6 +55,8 @@ pub struct Mark {
     pub ordered: bool,
     /// What a click does, for the border's colour: see [`tone`].
     pub tone: &'static str,
+    /// One copy of the target's cards drawn alone: a click on it picked takes it back.
+    pub copy: bool,
 }
 
 impl Ui {
@@ -75,6 +77,27 @@ impl Ui {
             } else {
                 tone(&self.decision, target)
             },
+            copy: false,
+        }
+    }
+
+    /// Copy `k` of target `t`'s cards, drawn alone: picked if that many are.
+    pub fn mark_copy(&self, sel: &Selection, t: usize, k: usize) -> Mark {
+        let m = self.mark_target(sel, t);
+        let picked = m.picked.get(k).map(|&p| vec![p]).unwrap_or_default();
+        let full = !self.click_answers
+            && sel.picks().len() >= self.inter.max as usize
+            && picked.is_empty();
+        Mark {
+            options: 1,
+            picked,
+            tone: if full {
+                ""
+            } else {
+                tone(&self.decision, &self.inter.targets[t])
+            },
+            copy: true,
+            ..m
         }
     }
 
