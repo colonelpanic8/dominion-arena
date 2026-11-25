@@ -85,5 +85,9 @@ Village)"). When their client looks wrong, fix the projection, not our client.
   Market deck, Inheritance's Estate token, more than one Trait on a pile, and Shelters
   chosen at the table. When their client refuses a game, its console log
   (`theirs-console.log`) says why.
+- Their client joins each game already in progress, and some of what it draws then
+  differs from a game it watched being played: it lays out a snapshot's cards before
+  reading their statuses, so a Duration from last turn stacks with a copy played this
+  turn. Our table follows the live game there; don't chase those points.
 - One seat's view (Alice's) at one viewport per run.
 - Animations, hovering and windows (the study view, mats opened) aren't compared yet.
