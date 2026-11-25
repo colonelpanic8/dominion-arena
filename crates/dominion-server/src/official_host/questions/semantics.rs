@@ -73,57 +73,40 @@ sets!(
     rising_sun
 );
 
-/// How a `Choose` whose options aren't all a card's modes is shown.
-pub(super) enum Choice {
-    /// A CardModes symbol per option, in order.
-    Modes(Vec<&'static str>),
-    /// Yes is picking this visible card; No is the decline button.
-    Card(dominion_engine::CardId),
-    /// A BUTTON per option under COMPLEX_OR, named by its DeclineButtonIds symbol.
-    Buttons(Vec<&'static str>),
-    /// Each option's card, by name (Boons, which have no physical card to point at).
-    Names(Vec<Card>),
+/// How a set presents a choice of options (yes/no, alternatives) `prepare` has no
+/// generic shape for.
+pub(super) enum ChoiceShape {
+    /// Selecting the card answers `yes`; the decline button answers `no`.
+    Target {
+        card: dominion_engine::CardId,
+        yes: dominion_engine::Opt,
+        no: dominion_engine::Opt,
+        decline: &'static str,
+    },
+    /// A CardModes symbol per option; an empty selection, if declinable, is `decline`.
+    Modes {
+        options: Vec<(dominion_engine::Opt, &'static str)>,
+        decline: Option<(dominion_engine::Opt, &'static str)>,
+    },
+    /// A DeclineButtonIds button per option.
+    Buttons(Vec<(dominion_engine::Opt, &'static str)>),
+    /// A disclosed card per option (one of each name offered).
+    Cards(Vec<(dominion_engine::Opt, dominion_engine::CardId)>),
+    /// A card name per option.
+    Names(Vec<(dominion_engine::Opt, Card)>),
 }
 
-/// The view, the trigger and its index among the pending ones.
-type AbilityArguments = fn(
-    &View<'_>,
-    &Trigger,
-    usize,
-    &WireCatalog,
-) -> Option<Result<Vec<LogArgument>, ProjectionError>>;
-
-/// Hooks a set's module adds beyond `SetBindings`, for sets that need them.
-pub(super) struct SetExtras {
-    pub choice: fn(&View<'_>, &Decision) -> Option<Choice>,
-    pub ability_arguments: AbilityArguments,
-    pub decline: fn(&Decision) -> Option<&'static str>,
-}
-const EXTRAS: &[SetExtras] = &[
-    dark_ages::EXTRAS,
-    cornucopia_guilds::EXTRAS,
-    adventures::EXTRAS,
-    nocturne::EXTRAS,
-];
-
-pub(super) fn choice(view: &View<'_>, d: &Decision) -> Option<Choice> {
-    EXTRAS.iter().find_map(|s| (s.choice)(view, d))
-}
-
-/// The log arguments an ability in a trigger window is described with, if any.
-pub(super) fn ability_arguments(
+pub(super) fn choice_shape(
     view: &View<'_>,
-    t: &Trigger,
-    index: usize,
-    c: &WireCatalog,
-) -> Option<Result<Vec<LogArgument>, ProjectionError>> {
-    EXTRAS
-        .iter()
-        .find_map(|s| (s.ability_arguments)(view, t, index, c))
-}
-
-pub(super) fn decline_button(d: &Decision) -> Option<&'static str> {
-    EXTRAS.iter().find_map(|s| (s.decline)(d))
+    d: &Decision,
+) -> Option<Result<ChoiceShape, ProjectionError>> {
+    allies::choice_shape(view, d)
+        .or_else(|| plunder::choice_shape(view, d))
+        .or_else(|| rising_sun::choice_shape(view, d))
+        .or_else(|| dark_ages::choice_shape(view, d))
+        .or_else(|| cornucopia_guilds::choice_shape(view, d))
+        .or_else(|| adventures::choice_shape(view, d))
+        .or_else(|| nocturne::choice_shape(view, d))
 }
 
 /// A card's requirements as a set's module declares them.
@@ -179,6 +162,13 @@ pub(super) fn subject(view: &View<'_>, d: &Decision) -> Result<LogArgument, Proj
         .pending_subject()
         .ok_or_else(|| gap(d, "missing affected player"))?;
     Ok(LogArgument::Player(subject.0.into()))
+}
+
+/// The index of pending trigger `t`, for what its occasion is about.
+pub(super) fn trigger_index(view: &View<'_>, t: &Trigger) -> Option<usize> {
+    view.pending_triggers()
+        .iter()
+        .position(|&p| std::ptr::eq(p, t))
 }
 
 /// Stories are selected by effect purpose and response shape, never display labels.
@@ -352,6 +342,73 @@ pub(super) fn ability(card: Card, ability: u8) -> Option<&'static str> {
         Cathedral => "CATHEDRAL",
         _ => return None,
     })
+}
+
+/// How a set shows a `Choose` decision that isn't all CardModes.
+pub(super) fn option_shape(
+    view: &View<'_>,
+    d: &Decision,
+    c: &WireCatalog,
+) -> Option<Result<super::OptionShape, ProjectionError>> {
+    empires::option_shape(view, d, c)
+        .or_else(|| renaissance::option_shape(view, d, c))
+        .or_else(|| menagerie::option_shape(view, d, c))
+}
+
+/// A set's own decline button for an optional choice ("Don't Crown").
+pub(super) fn decline_button(d: &Decision) -> Option<&'static str> {
+    empires::decline_button(d)
+        .or_else(|| renaissance::decline_button(d))
+        .or_else(|| menagerie::decline_button(d))
+        .or_else(|| dark_ages::decline_button(d))
+        .or_else(|| cornucopia_guilds::decline_button(d))
+        .or_else(|| adventures::decline_button(d))
+        .or_else(|| nocturne::decline_button(d))
+}
+
+type ArgumentsHook<'a> = dyn Fn() -> Option<Result<Vec<LogArgument>, ProjectionError>> + 'a;
+
+/// The log arguments an ability's description names (its Argument0, ...), by symbol.
+pub(super) fn ability_arguments(
+    view: &View<'_>,
+    d: &Decision,
+    t: &Trigger,
+    symbol: &str,
+    c: &WireCatalog,
+) -> Result<Vec<LogArgument>, ProjectionError> {
+    use dominion_engine::Set;
+    // Sets share ability names (TOPDECK_REACTION): the trigger's own set reads it first.
+    let hooks: [(Set, &ArgumentsHook); 10] = [
+        (Set::Empires, &|| {
+            empires::ability_arguments(view, d, t, symbol, c)
+        }),
+        (Set::Renaissance, &|| {
+            renaissance::ability_arguments(view, d, t, symbol, c)
+        }),
+        (Set::Menagerie, &|| {
+            menagerie::ability_arguments(view, d, t, symbol, c)
+        }),
+        (Set::Allies, &|| allies::ability_arguments(view, t, c)),
+        (Set::Plunder, &|| plunder::ability_arguments(view, t, c)),
+        (Set::RisingSun, &|| {
+            rising_sun::ability_arguments(view, t, c)
+        }),
+        (Set::DarkAges, &|| dark_ages::ability_arguments(view, t, c)),
+        (Set::CornucopiaGuilds, &|| {
+            cornucopia_guilds::ability_arguments(view, t, c)
+        }),
+        (Set::Adventures, &|| {
+            adventures::ability_arguments(view, t, c)
+        }),
+        (Set::Nocturne, &|| nocturne::ability_arguments(view, t, c)),
+    ];
+    let set = t.card.set();
+    hooks
+        .iter()
+        .filter(|(s, _)| *s == set)
+        .chain(hooks.iter().filter(|(s, _)| *s != set))
+        .find_map(|(_, hook)| hook())
+        .unwrap_or(Ok(vec![]))
 }
 
 /// Declared symbol dependencies for admission; evaluated even before the first play.

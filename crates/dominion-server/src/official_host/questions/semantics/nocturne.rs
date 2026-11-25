@@ -1,13 +1,7 @@
 //! Question bindings for Nocturne (see `semantics::SETS`).
-use super::{Binding, Choice, ProjectionError, SetExtras, WireCatalog, gap};
+use super::{Binding, ChoiceShape, ProjectionError, WireCatalog, gap};
 use dominion_engine::{Card, CardId, Decision, DecisionKind, Opt, Purpose, Trigger, View};
 use dominion_online::questions::{CardFrequency, LogArgument};
-
-pub(super) const EXTRAS: SetExtras = SetExtras {
-    choice,
-    ability_arguments,
-    decline,
-};
 
 pub(super) fn binding(
     view: &View<'_>,
@@ -101,37 +95,39 @@ fn arguments(
     })
 }
 
-fn choice(_view: &View<'_>, d: &Decision) -> Option<Choice> {
+pub(super) fn choice_shape(
+    _view: &View<'_>,
+    d: &Decision,
+) -> Option<Result<ChoiceShape, ProjectionError>> {
     let DecisionKind::Choose { options, .. } = &d.kind else {
         return None;
     };
     let yes_no = options.as_slice() == [Opt::Yes, Opt::No];
-    match d.source? {
-        Card::Druid | Card::Fool => options
-            .iter()
-            .map(|o| match o {
-                Opt::Card(boon) => Some(*boon),
-                _ => None,
-            })
-            .collect::<Option<Vec<_>>>()
-            .map(Choice::Names),
-        Card::Pixie if yes_no => Some(Choice::Modes(vec!["PIXIE_TRASH", "PIXIE_KEEP"])),
-        Card::SacredGrove if yes_no => Some(Choice::Modes(vec![
-            "SACRED_GROVE_RECEIVE",
-            "SACRED_GROVE_NO",
-        ])),
-        Card::ZombieSpy if yes_no => Some(Choice::Modes(vec![
-            "ZOMBIE_SPY_DISCARD",
-            "ZOMBIE_SPY_TOPDECK",
-        ])),
+    let modes = |yes, no| ChoiceShape::Modes {
+        options: vec![(Opt::Yes, yes), (Opt::No, no)],
+        decline: None,
+    };
+    Some(Ok(match d.source? {
+        Card::Druid | Card::Fool => ChoiceShape::Names(
+            options
+                .iter()
+                .map(|&o| match o {
+                    Opt::Card(boon) => Some((o, boon)),
+                    _ => None,
+                })
+                .collect::<Option<Vec<_>>>()?,
+        ),
+        Card::Pixie if yes_no => modes("PIXIE_TRASH", "PIXIE_KEEP"),
+        Card::SacredGrove if yes_no => modes("SACRED_GROVE_RECEIVE", "SACRED_GROVE_NO"),
+        Card::ZombieSpy if yes_no => modes("ZOMBIE_SPY_DISCARD", "ZOMBIE_SPY_TOPDECK"),
         Card::SecretCave | Card::TheSkysGift if yes_no => {
-            Some(Choice::Buttons(vec!["CONTINUE", "DONT_DISCARD"]))
+            ChoiceShape::Buttons(vec![(Opt::Yes, "CONTINUE"), (Opt::No, "DONT_DISCARD")])
         }
-        _ => None,
-    }
+        _ => return None,
+    }))
 }
 
-fn decline(d: &Decision) -> Option<&'static str> {
+pub(super) fn decline_button(d: &Decision) -> Option<&'static str> {
     Some(match d.source? {
         Card::Conclave => "CONCLAVE_DONT",
         Card::Imp => "IMP_DONT",
@@ -177,10 +173,9 @@ pub(super) fn ability(card: Card, ability: u8) -> Option<&'static str> {
     })
 }
 
-fn ability_arguments(
+pub(super) fn ability_arguments(
     view: &View<'_>,
     t: &Trigger,
-    index: usize,
     c: &WireCatalog,
 ) -> Option<Result<Vec<LogArgument>, ProjectionError>> {
     let lasting = || {
@@ -206,6 +201,7 @@ fn ability_arguments(
     };
     match (t.card, t.ability) {
         (Card::Changeling, 0) | (Card::Tracker, 0) => {
+            let index = super::trigger_index(view, t)?;
             Some(match view.pending_occasion_card(index) {
                 Some(card) => named(c, card).map(|a| vec![a]),
                 None => Err(ProjectionError::Inconsistent("ability card unseen")),

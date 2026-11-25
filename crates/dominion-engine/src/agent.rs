@@ -181,6 +181,12 @@ impl<'a> View<'a> {
             .flatten()
     }
 
+    /// The card in play whose pending Way question this player is answering.
+    pub fn pending_way_card(&self) -> Option<CardId> {
+        self.pending()?;
+        self.game.way_card().filter(|&id| self.visible(id))
+    }
+
     /// A visible card this effect retained across its preceding steps.
     pub fn pending_reference(&self) -> Option<CardId> {
         self.pending_card_frame()?

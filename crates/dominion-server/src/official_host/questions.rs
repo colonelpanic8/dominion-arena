@@ -74,6 +74,9 @@ enum AnswerPlan {
     },
     Constant(Response),
     Or(Vec<AnswerPlan>),
+    /// A COMPLEX_AND of the card being played and the Way to play it with, each part
+    /// prefixed by how many values it has: no Way plays the card as itself.
+    Way(Vec<Opt>),
 }
 impl AnswerPlan {
     fn resolve(&self, values: &[i32]) -> Result<Response, AnswerRejection> {
@@ -147,6 +150,11 @@ impl AnswerPlan {
                     values[0]
                 })
             }
+            Self::Way(ways) => match values {
+                [1, 0, 0] => Response::option(Opt::No),
+                [1, 0, 1, way] => Response::option(*position(ways, *way)?),
+                _ => return Err(M("play the card, with at most one Way")),
+            },
             Self::Constant(response) => {
                 if !values.is_empty() {
                     return Err(M("unexpected branch arguments"));
@@ -234,13 +242,6 @@ fn choice(
         },
     })
 }
-/// A set's own decline button for `d`, else the one its purpose names.
-fn decline_for(c: &WireCatalog, d: &Decision, min: usize) -> Result<i32, ProjectionError> {
-    match semantics::decline_button(d) {
-        Some(button) if min == 0 => c.symbol("DeclineButtonIds", button),
-        _ => decline(c, d.purpose, min),
-    }
-}
 fn decline(c: &WireCatalog, purpose: Purpose, min: usize) -> Result<i32, ProjectionError> {
     if min != 0 {
         return Ok(-1);
@@ -255,9 +256,382 @@ fn decline(c: &WireCatalog, purpose: Purpose, min: usize) -> Result<i32, Project
             Purpose::TopDeck => "DONT_TOPDECK",
             Purpose::Reveal => "DONT_REVEAL",
             Purpose::SetAside => "DONE_SETTING_ASIDE",
+            Purpose::Exile => "DONT_EXILE",
             _ => "DONT",
         },
     )
+}
+
+/// How a set module shows a `Choose` decision's options (`semantics::option_shape`).
+pub(super) enum OptionShape {
+    /// One of their CardModes per option, in order.
+    Modes(Vec<&'static str>),
+    /// `Opt::Yes` is this CardModes symbol; `Opt::No` the decline button.
+    Mode(&'static str, &'static str),
+    /// `Opt::Yes` selects this visible card; `Opt::No` is the decline button.
+    Card(CardId, &'static str),
+    /// `Opt::Yes` uses this optional ability (AbilityNames symbol, its card, the
+    /// description's arguments) in a reaction window; `Opt::No` declines it.
+    Ability(
+        &'static str,
+        CardId,
+        Vec<dominion_online::questions::LogArgument>,
+    ),
+    /// `Opt::Yes` is a button labelled by this DeclineButtonIds symbol, `Opt::No` the
+    /// question's decline button.
+    Button(&'static str, &'static str),
+}
+
+#[allow(clippy::too_many_arguments)]
+fn option_question(
+    d: &Decision,
+    desc: QuestionDescription,
+    options: &[Opt],
+    min: usize,
+    max: usize,
+    shape: OptionShape,
+    id: &dyn Fn(&CardId) -> Result<i32, ProjectionError>,
+    c: &WireCatalog,
+) -> Result<(Question, AnswerPlan), ProjectionError> {
+    let yes_no = options == [Opt::Yes, Opt::No];
+    Ok(match shape {
+        OptionShape::Modes(symbols) => {
+            if symbols.len() != options.len() {
+                return Err(semantics::gap(d, "a CardModes symbol per option"));
+            }
+            let modes = symbols
+                .iter()
+                .map(|s| c.symbol("CardModes", s))
+                .collect::<Result<Vec<_>, _>>()?;
+            (
+                choice(desc, QuestionElements::Modes(modes), min, max, -1)?,
+                AnswerPlan::Options {
+                    targets: options.to_vec(),
+                    min,
+                    max,
+                    decline: None,
+                },
+            )
+        }
+        OptionShape::Mode(mode, decline) if yes_no => (
+            choice(
+                desc,
+                QuestionElements::Modes(vec![c.symbol("CardModes", mode)?]),
+                0,
+                1,
+                c.symbol("DeclineButtonIds", decline)?,
+            )?,
+            AnswerPlan::Options {
+                targets: vec![Opt::Yes],
+                min: 1,
+                max: 1,
+                decline: Some(Opt::No),
+            },
+        ),
+        OptionShape::Card(target, decline) if yes_no => (
+            choice(
+                desc,
+                QuestionElements::Cards(vec![id(&target)?]),
+                0,
+                1,
+                c.symbol("DeclineButtonIds", decline)?,
+            )?,
+            AnswerPlan::Options {
+                targets: vec![Opt::Yes],
+                min: 1,
+                max: 1,
+                decline: Some(Opt::No),
+            },
+        ),
+        OptionShape::Ability(name, card, arguments) if yes_no => (
+            choice(
+                desc,
+                QuestionElements::Abilities(vec![Ability {
+                    description_type: if arguments.is_empty() { 1 } else { 2 },
+                    name: c.symbol("AbilityNames", name)?,
+                    association: id(&card)?,
+                    arguments,
+                    optional: true,
+                    copy_index: 0,
+                    copy_total: 1,
+                }]),
+                0,
+                1,
+                c.symbol("DeclineButtonIds", "DONE_REACTING")?,
+            )?,
+            AnswerPlan::Options {
+                targets: vec![Opt::Yes],
+                min: 1,
+                max: 1,
+                decline: Some(Opt::No),
+            },
+        ),
+        OptionShape::Button(yes, no) if yes_no => {
+            let association = desc.association;
+            let story = desc.story.clone();
+            let button = |b: &str| {
+                Ok::<_, ProjectionError>(Question {
+                    index: 0,
+                    description: QuestionDescription {
+                        question_type: c.symbol("QuestionTypes", "BUTTON")?,
+                        association,
+                        story: story.clone(),
+                        short_story: story.clone(),
+                    },
+                    kind: QuestionKind::Choice {
+                        min: 0,
+                        max: 0,
+                        elements: QuestionElements::Cards(vec![]),
+                        decline: c.symbol("DeclineButtonIds", b)?,
+                        defaults: vec![],
+                        affected: vec![],
+                    },
+                })
+            };
+            let mut desc = desc;
+            desc.question_type = c.symbol("QuestionTypes", "COMPLEX_OR")?;
+            (
+                Question {
+                    index: 0,
+                    description: desc,
+                    kind: QuestionKind::Complex(vec![button(yes)?, button(no)?]),
+                },
+                AnswerPlan::Or(vec![
+                    AnswerPlan::Constant(Response::option(Opt::Yes)),
+                    AnswerPlan::Constant(Response::option(Opt::No)),
+                ]),
+            )
+        }
+        _ => return Err(semantics::gap(d, "option shape for these options")),
+    })
+}
+
+/// The engine asks for a Way once the card is in play; their client picks one beside the
+/// card it plays (a WAY question bundled in a COMPLEX_AND), as it does for "Consider the
+/// Way you play" it.
+fn way_question(
+    view: &View<'_>,
+    d: &Decision,
+    options: &[Opt],
+    id: &dyn Fn(&CardId) -> Result<i32, ProjectionError>,
+    landscapes: &BTreeMap<Card, i32>,
+    c: &WireCatalog,
+) -> Result<(Question, AnswerPlan), ProjectionError> {
+    let card = view
+        .pending_way_card()
+        .ok_or_else(|| semantics::gap(d, "Way without the card being played"))?;
+    let name = view
+        .card(card)
+        .ok_or_else(|| semantics::gap(d, "Way card identity unavailable"))?;
+    let card = id(&card)?;
+    let mut ways = vec![];
+    let mut elements = vec![];
+    for &o in options {
+        match o {
+            Opt::No => {}
+            Opt::Card(way) => {
+                elements.push(
+                    *landscapes
+                        .get(&way)
+                        .ok_or(ProjectionError::Inconsistent("Way is not on the table"))?,
+                );
+                ways.push(o);
+            }
+            _ => return Err(semantics::gap(d, "Way option")),
+        }
+    }
+    if !options.contains(&Opt::No) {
+        return Err(semantics::gap(
+            d,
+            "Way question without playing the card itself",
+        ));
+    }
+    let args = || {
+        Ok::<_, ProjectionError>(vec![dominion_online::questions::LogArgument::CardNames(
+            vec![dominion_online::questions::CardFrequency {
+                name: c.card(name)?,
+                frequency: 1,
+            }],
+        )])
+    };
+    let play = choice(
+        described(c, "PLAY", "CONSIDER_WAY", card, args()?)?,
+        QuestionElements::Cards(vec![card]),
+        1,
+        1,
+        -1,
+    )?;
+    let mut way = choice(
+        described(c, "WAY", "CONSIDER_WAY", card, args()?)?,
+        QuestionElements::Cards(elements),
+        0,
+        1,
+        -1,
+    )?;
+    if let QuestionKind::Choice { affected, .. } = &mut way.kind {
+        affected.push(card);
+    }
+    Ok((
+        Question {
+            index: 0,
+            description: described(c, "COMPLEX_AND", "CONSIDER_WAY", card, args()?)?,
+            kind: QuestionKind::Complex(vec![play, way]),
+        },
+        AnswerPlan::Way(ways),
+    ))
+}
+
+/// A set's own decline button for an optional choice, else the purpose's.
+fn decline_for(c: &WireCatalog, d: &Decision, min: usize) -> Result<i32, ProjectionError> {
+    match semantics::decline_button(d) {
+        Some(button) if min == 0 => c.symbol("DeclineButtonIds", button),
+        _ => decline(c, d.purpose, min),
+    }
+}
+
+/// A choice laid out as its set's `ChoiceShape` says.
+fn shaped(
+    c: &WireCatalog,
+    d: &Decision,
+    desc: QuestionDescription,
+    shape: semantics::ChoiceShape,
+    id: &dyn Fn(&CardId) -> Result<i32, ProjectionError>,
+) -> Result<(Question, AnswerPlan), ProjectionError> {
+    let DecisionKind::Choose {
+        options, min, max, ..
+    } = &d.kind
+    else {
+        return Err(semantics::gap(d, "choice shape for a non-choice"));
+    };
+    let offered = |o: &Opt| {
+        if options.contains(o) {
+            Ok(*o)
+        } else {
+            Err(semantics::gap(
+                d,
+                "choice shape names an option not offered",
+            ))
+        }
+    };
+    Ok(match shape {
+        semantics::ChoiceShape::Target {
+            card,
+            yes,
+            no,
+            decline,
+        } => (
+            choice(
+                desc,
+                QuestionElements::Cards(vec![id(&card)?]),
+                0,
+                1,
+                c.symbol("DeclineButtonIds", decline)?,
+            )?,
+            AnswerPlan::Options {
+                targets: vec![offered(&yes)?],
+                min: 1,
+                max: 1,
+                decline: Some(offered(&no)?),
+            },
+        ),
+        semantics::ChoiceShape::Modes {
+            options: modes,
+            decline,
+        } => {
+            let symbols = modes
+                .iter()
+                .map(|(_, m)| c.symbol("CardModes", m))
+                .collect::<Result<Vec<_>, _>>()?;
+            let targets = modes
+                .iter()
+                .map(|(o, _)| offered(o))
+                .collect::<Result<Vec<_>, _>>()?;
+            let (low, high) = ((*min).min(targets.len()), (*max).min(targets.len()));
+            let (button, decline) = match decline {
+                Some((o, button)) => (c.symbol("DeclineButtonIds", button)?, Some(offered(&o)?)),
+                None => (-1, None),
+            };
+            (
+                choice(
+                    desc,
+                    QuestionElements::Modes(symbols),
+                    if decline.is_some() { 0 } else { low },
+                    high,
+                    button,
+                )?,
+                AnswerPlan::Options {
+                    targets,
+                    min: if decline.is_some() { low.max(1) } else { low },
+                    max: high,
+                    decline,
+                },
+            )
+        }
+        semantics::ChoiceShape::Buttons(buttons) => {
+            let mut children = vec![];
+            let mut plans = vec![];
+            for (o, button) in buttons {
+                let mut child = desc.clone();
+                child.question_type = c.symbol("QuestionTypes", "BUTTON")?;
+                children.push(choice(
+                    child,
+                    QuestionElements::Cards(vec![]),
+                    0,
+                    0,
+                    c.symbol("DeclineButtonIds", button)?,
+                )?);
+                plans.push(AnswerPlan::Constant(Response::option(offered(&o)?)));
+            }
+            let mut desc = desc;
+            desc.question_type = c.symbol("QuestionTypes", "COMPLEX_OR")?;
+            (
+                Question {
+                    index: 0,
+                    description: desc,
+                    kind: QuestionKind::Complex(children),
+                },
+                AnswerPlan::Or(plans),
+            )
+        }
+        semantics::ChoiceShape::Cards(cards) => {
+            let elements = cards
+                .iter()
+                .map(|(_, card)| id(card))
+                .collect::<Result<Vec<_>, _>>()?;
+            let targets = cards
+                .iter()
+                .map(|(o, _)| offered(o))
+                .collect::<Result<Vec<_>, _>>()?;
+            (
+                choice(desc, QuestionElements::Cards(elements), *min, *max, -1)?,
+                AnswerPlan::Options {
+                    targets,
+                    min: *min,
+                    max: *max,
+                    decline: None,
+                },
+            )
+        }
+        semantics::ChoiceShape::Names(names) => {
+            let elements = names
+                .iter()
+                .map(|(_, card)| c.card(*card))
+                .collect::<Result<Vec<_>, _>>()?;
+            let targets = names
+                .iter()
+                .map(|(o, _)| offered(o))
+                .collect::<Result<Vec<_>, _>>()?;
+            (
+                choice(desc, QuestionElements::Names(elements), *min, *max, -1)?,
+                AnswerPlan::Options {
+                    targets,
+                    min: *min,
+                    max: *max,
+                    decline: None,
+                },
+            )
+        }
+    })
 }
 
 pub(super) fn prepare(
@@ -447,9 +821,7 @@ pub(super) fn prepare(
                                 },
                             ])]
                         } else {
-                            semantics::ability_arguments(view, t, usize::from(i), c)
-                                .transpose()?
-                                .unwrap_or_default()
+                            semantics::ability_arguments(view, d, t, symbol, c)?
                         };
                         abilities.push(Ability {
                             description_type: if arguments.is_empty() { 1 } else { 2 },
@@ -458,6 +830,17 @@ pub(super) fn prepare(
                                 .source
                                 .and_then(|s| ids.get(&s).copied())
                                 .or_else(|| landscapes.get(&t.card).copied())
+                                .or_else(|| {
+                                    // A lasting effect's: its card, else the cards it holds.
+                                    let l = view
+                                        .lasting()
+                                        .into_iter()
+                                        .find(|l| Some(l.id) == t.lasting)?;
+                                    l.source
+                                        .into_iter()
+                                        .chain(l.data.cards.iter().copied())
+                                        .find_map(|id| ids.get(&id).copied())
+                                })
                                 // A State is no card on the table to point at.
                                 .or_else(|| {
                                     (t.card.kind() == dominion_engine::Kind::State).then_some(-1)
@@ -500,6 +883,9 @@ pub(super) fn prepare(
                     decline: optional.then_some(Opt::No),
                 },
             )
+        }
+        DecisionKind::Choose { options, .. } if d.purpose == Purpose::Way => {
+            way_question(view, d, options, &id, landscapes, c)?
         }
         _ => {
             let (kind, story, args) = semantics::binding(view, d, c)?;
@@ -579,10 +965,10 @@ pub(super) fn prepare(
                     )
                 }
                 DecisionKind::Number { min, max } => {
-                    // A location counts from the bottom; an amount is itself, none by default.
+                    // A location counts from the bottom; an amount is itself.
                     let reverse = match kind {
                         "LOCATION" => true,
-                        "OVERPAY" | "OVERPAY_COINS" | "OVERPAY_POTIONS" => false,
+                        "HOW_MUCH_REPAY" | "BID" | "OVERPAY" => false,
                         _ => return Err(semantics::gap(d, "number meaning")),
                     };
                     (
@@ -592,7 +978,11 @@ pub(super) fn prepare(
                             kind: QuestionKind::Number {
                                 min: *min,
                                 max: *max,
-                                default: if reverse { *max } else { *min },
+                                default: if matches!(kind, "BID" | "OVERPAY") {
+                                    *min
+                                } else {
+                                    *max
+                                },
                                 decline: -1,
                             },
                         },
@@ -606,8 +996,8 @@ pub(super) fn prepare(
                 DecisionKind::Choose {
                     options, min, max, ..
                 } => {
-                    if let Some(shown) = semantics::choice(view, d) {
-                        set_choice(c, d, desc, association, shown, options, *min, *max, &id)?
+                    if let Some(shape) = semantics::choice_shape(view, d).transpose()? {
+                        shaped(c, d, desc, shape, &id)?
                     } else if options.iter().all(|o| matches!(o, Opt::Mode(_)))
                         && d.source != Some(Card::Torturer)
                     {
@@ -720,6 +1110,8 @@ pub(super) fn prepare(
                             },
                             AnswerPlan::Or(plans),
                         )
+                    } else if let Some(shape) = semantics::option_shape(view, d, c) {
+                        option_question(d, desc, options, *min, *max, shape?, &id, c)?
                     } else {
                         return Err(semantics::gap(d, "unmapped option shape"));
                     }
@@ -734,109 +1126,5 @@ pub(super) fn prepare(
         decision_id: decision_id.into(),
         epoch: 0,
         plan,
-    })
-}
-
-/// A `Choose` a set's module says how to show (`semantics::Choice`).
-#[allow(clippy::too_many_arguments)]
-fn set_choice(
-    c: &WireCatalog,
-    d: &Decision,
-    desc: QuestionDescription,
-    association: i32,
-    shown: semantics::Choice,
-    options: &[Opt],
-    min: usize,
-    max: usize,
-    id: &dyn Fn(&CardId) -> Result<i32, ProjectionError>,
-) -> Result<(Question, AnswerPlan), ProjectionError> {
-    use semantics::Choice;
-    Ok(match shown {
-        Choice::Modes(modes) => {
-            if modes.len() != options.len() {
-                return Err(ProjectionError::Inconsistent("one mode per option"));
-            }
-            let modes = modes
-                .iter()
-                .map(|m| c.symbol("CardModes", m))
-                .collect::<Result<Vec<_>, _>>()?;
-            (
-                choice(desc, QuestionElements::Modes(modes), min, max, -1)?,
-                AnswerPlan::Options {
-                    targets: options.to_vec(),
-                    min,
-                    max,
-                    decline: None,
-                },
-            )
-        }
-        Choice::Card(card) => {
-            if options != [Opt::Yes, Opt::No] {
-                return Err(semantics::gap(d, "card choice without yes and no"));
-            }
-            (
-                choice(
-                    desc,
-                    QuestionElements::Cards(vec![id(&card)?]),
-                    0,
-                    1,
-                    decline_for(c, d, 0)?,
-                )?,
-                AnswerPlan::Options {
-                    targets: vec![Opt::Yes],
-                    min: 1,
-                    max: 1,
-                    decline: Some(Opt::No),
-                },
-            )
-        }
-        Choice::Names(cards) => {
-            if cards.len() != options.len() {
-                return Err(ProjectionError::Inconsistent("one name per option"));
-            }
-            let names = cards
-                .iter()
-                .map(|&card| c.card(card))
-                .collect::<Result<Vec<_>, _>>()?;
-            (
-                choice(desc, QuestionElements::Names(names), min, max, -1)?,
-                AnswerPlan::Options {
-                    targets: options.to_vec(),
-                    min,
-                    max,
-                    decline: None,
-                },
-            )
-        }
-        Choice::Buttons(buttons) => {
-            if buttons.len() != options.len() {
-                return Err(ProjectionError::Inconsistent("one button per option"));
-            }
-            let mut children = vec![];
-            let mut plans = vec![];
-            for (&o, button) in options.iter().zip(buttons) {
-                let mut child = desc.clone();
-                child.question_type = c.symbol("QuestionTypes", "BUTTON")?;
-                child.association = association;
-                children.push(choice(
-                    child,
-                    QuestionElements::Cards(vec![]),
-                    0,
-                    0,
-                    c.symbol("DeclineButtonIds", button)?,
-                )?);
-                plans.push(AnswerPlan::Constant(Response::option(o)));
-            }
-            let mut desc = desc;
-            desc.question_type = c.symbol("QuestionTypes", "COMPLEX_OR")?;
-            (
-                Question {
-                    index: 0,
-                    description: desc,
-                    kind: QuestionKind::Complex(children),
-                },
-                AnswerPlan::Or(plans),
-            )
-        }
     })
 }

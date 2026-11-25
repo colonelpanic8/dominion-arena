@@ -1,15 +1,9 @@
 //! Question bindings for Adventures (see `semantics::SETS`).
-use super::{Binding, Choice, ProjectionError, SetExtras, WireCatalog, cost_bound, gap};
+use super::{Binding, ChoiceShape, ProjectionError, WireCatalog, cost_bound, gap};
 use dominion_engine::{
     Card, CardId, Decision, DecisionKind, Mat, Opt, Purpose, Token, Trigger, View,
 };
 use dominion_online::questions::LogArgument;
-
-pub(super) const EXTRAS: SetExtras = SetExtras {
-    choice,
-    ability_arguments,
-    decline,
-};
 
 /// Whether the deciding player's `token` is on a pile already.
 fn placed(view: &View<'_>, d: &Decision, token: Token) -> bool {
@@ -167,19 +161,25 @@ fn arguments(
     })
 }
 
-fn choice(_view: &View<'_>, d: &Decision) -> Option<Choice> {
+pub(super) fn choice_shape(
+    _view: &View<'_>,
+    d: &Decision,
+) -> Option<Result<ChoiceShape, ProjectionError>> {
     let DecisionKind::Choose { options, .. } = &d.kind else {
         return None;
     };
     match d.source? {
         Card::Messenger if options.as_slice() == [Opt::Yes, Opt::No] => {
-            Some(Choice::Modes(vec!["MESSENGER_DISCARD", "MESSENGER_KEEP"]))
+            Some(Ok(ChoiceShape::Modes {
+                options: vec![(Opt::Yes, "MESSENGER_DISCARD"), (Opt::No, "MESSENGER_KEEP")],
+                decline: None,
+            }))
         }
         _ => None,
     }
 }
 
-fn decline(d: &Decision) -> Option<&'static str> {
+pub(super) fn decline_button(d: &Decision) -> Option<&'static str> {
     Some(match d.source? {
         Card::Artificer if d.purpose == Purpose::Discard => "ARTIFICER_DONT",
         _ => return None,
@@ -246,10 +246,9 @@ pub(super) fn ability(card: Card, ability: u8) -> Option<&'static str> {
     })
 }
 
-fn ability_arguments(
+pub(super) fn ability_arguments(
     view: &View<'_>,
     t: &Trigger,
-    index: usize,
     c: &WireCatalog,
 ) -> Option<Result<Vec<LogArgument>, ProjectionError>> {
     let names = |cards: &[CardId]| -> Result<Vec<LogArgument>, ProjectionError> {
@@ -281,6 +280,7 @@ fn ability_arguments(
     };
     match (t.card, t.ability) {
         (Card::Duplicate, 1) | (Card::TravellingFair, 9) | (Card::RoyalCarriage, 1) => {
+            let index = super::trigger_index(view, t)?;
             Some(match view.pending_occasion_card(index) {
                 Some(card) => c.card(card).map(|name| {
                     vec![LogArgument::CardNames(vec![

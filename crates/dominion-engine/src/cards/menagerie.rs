@@ -1369,6 +1369,7 @@ fn displace(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let limit = g.cost_of(c).plus_coins(2);
             let name = g.card(c);
             exile(g, p, c);
+            f.choice_cost = Some(limit);
             let piles: Vec<PileId> = g
                 .piles_costing_up_to(limit)
                 .into_iter()
@@ -1788,6 +1789,7 @@ fn enhance(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         2 => {
             let cost = g.cost_of(f.s.pick.expect("set in step 1"));
             let piles = g.piles_costing_up_to(cost.plus_coins(2));
+            f.choice_cost = Some(cost.plus_coins(2));
             gain_from(f, Input::Start, piles, 2, Dest::Discard)
         }
         3 => gain_from(f, input, vec![], 2, Dest::Discard),
@@ -2020,6 +2022,7 @@ fn butterfly(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             // "$1 more than it": what it costs once returned (a Peddler no longer in play).
             let target = g.cost_of(this).plus_coins(1);
             let piles = g.supply_piles_where(|_, c| c == target);
+            f.choice_cost = Some(target);
             f.pc = 2;
             gain_from(f, Input::Start, piles, 2, Dest::Discard)
         }

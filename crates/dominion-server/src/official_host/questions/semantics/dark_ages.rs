@@ -1,13 +1,7 @@
 //! Question bindings for Dark Ages (see `semantics::SETS`).
-use super::{Binding, Choice, ProjectionError, SetExtras, WireCatalog, card_names, cost_bound};
+use super::{Binding, ChoiceShape, ProjectionError, WireCatalog, card_names, cost_bound};
 use dominion_engine::{Card, Decision, DecisionKind, Opt, Purpose, Trigger, View};
 use dominion_online::questions::LogArgument;
-
-pub(super) const EXTRAS: SetExtras = SetExtras {
-    choice,
-    ability_arguments,
-    decline,
-};
 
 fn knight(card: Card) -> bool {
     card.def().pile == Some(Card::Knights)
@@ -104,42 +98,54 @@ fn arguments(
     })
 }
 
-fn choice(view: &View<'_>, d: &Decision) -> Option<Choice> {
+pub(super) fn choice_shape(
+    view: &View<'_>,
+    d: &Decision,
+) -> Option<Result<ChoiceShape, ProjectionError>> {
     let DecisionKind::Choose { options, .. } = &d.kind else {
         return None;
     };
-    if d.source == Some(Card::Count) {
-        // Count's two "choose one"s: which one is asking is its step.
-        let modes: &[&str] = if view.pending_step() == Some(1) {
-            &["COUNT_DISCARD", "COUNT_TOPDECK", "COUNT_GAIN_COPPER"]
-        } else {
-            &["COUNT_COINS", "COUNT_TRASH_HAND", "COUNT_GAIN_DUCHY"]
-        };
-        return options
-            .iter()
-            .map(|o| match o {
-                Opt::Mode(m) => modes.get(usize::from(*m)).copied(),
-                _ => None,
-            })
-            .collect::<Option<Vec<_>>>()
-            .map(Choice::Modes);
-    }
-    let yes_no =
-        |yes, no| (options.as_slice() == [Opt::Yes, Opt::No]).then(|| Choice::Modes(vec![yes, no]));
-    match d.source? {
-        Card::Ironmonger => yes_no("IRONMONGER_DISCARD", "IRONMONGER_KEEP"),
-        Card::Scavenger => yes_no("SCAVENGER_DISCARD", "SCAVENGER_KEEP"),
-        Card::Mercenary if options.as_slice() == [Opt::Yes, Opt::No] => {
-            Some(Choice::Buttons(vec!["CONTINUE", "DONT_TRASH"]))
+    let yes_no = options.as_slice() == [Opt::Yes, Opt::No];
+    let modes = |yes, no| ChoiceShape::Modes {
+        options: vec![(Opt::Yes, yes), (Opt::No, no)],
+        decline: None,
+    };
+    Some(Ok(match d.source? {
+        Card::Count => {
+            // Count's two "choose one"s: which one is asking is its step.
+            let names: &[&'static str] = if view.pending_step() == Some(1) {
+                &["COUNT_DISCARD", "COUNT_TOPDECK", "COUNT_GAIN_COPPER"]
+            } else {
+                &["COUNT_COINS", "COUNT_TRASH_HAND", "COUNT_GAIN_DUCHY"]
+            };
+            let options = options
+                .iter()
+                .map(|&o| match o {
+                    Opt::Mode(m) => names.get(usize::from(m)).map(|&n| (o, n)),
+                    _ => None,
+                })
+                .collect::<Option<Vec<_>>>()?;
+            ChoiceShape::Modes {
+                options,
+                decline: None,
+            }
+        }
+        Card::Ironmonger if yes_no => modes("IRONMONGER_DISCARD", "IRONMONGER_KEEP"),
+        Card::Scavenger if yes_no => modes("SCAVENGER_DISCARD", "SCAVENGER_KEEP"),
+        Card::Mercenary if yes_no => {
+            ChoiceShape::Buttons(vec![(Opt::Yes, "CONTINUE"), (Opt::No, "DONT_TRASH")])
         }
         Card::Survivors if options.as_slice() == [Opt::Mode(0), Opt::Mode(1)] => {
-            Some(Choice::Buttons(vec!["DISCARD_ALL", "CONTINUE"]))
+            ChoiceShape::Buttons(vec![
+                (Opt::Mode(0), "DISCARD_ALL"),
+                (Opt::Mode(1), "CONTINUE"),
+            ])
         }
-        _ => None,
-    }
+        _ => return None,
+    }))
 }
 
-fn decline(d: &Decision) -> Option<&'static str> {
+pub(super) fn decline_button(d: &Decision) -> Option<&'static str> {
     Some(match d.source? {
         Card::Counterfeit => "COUNTERFEIT_NO_TREASURE",
         Card::Cultist => "CULTIST_DONT_PLAY_ANOTHER",
@@ -182,10 +188,9 @@ pub(super) fn ability(card: Card, ability: u8) -> Option<&'static str> {
     })
 }
 
-fn ability_arguments(
+pub(super) fn ability_arguments(
     _view: &View<'_>,
     t: &Trigger,
-    _index: usize,
     _c: &WireCatalog,
 ) -> Option<Result<Vec<LogArgument>, ProjectionError>> {
     let cards = match t.card {

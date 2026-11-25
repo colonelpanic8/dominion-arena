@@ -1,15 +1,7 @@
 //! Question bindings for Cornucopia & Guilds (see `semantics::SETS`).
-use super::{
-    Binding, Choice, ProjectionError, SetExtras, WireCatalog, card_names, cost_bound, gap,
-};
+use super::{Binding, ChoiceShape, ProjectionError, WireCatalog, card_names, cost_bound, gap};
 use dominion_engine::{Card, Decision, DecisionKind, Opt, Purpose, Trigger, View};
 use dominion_online::questions::LogArgument;
-
-pub(super) const EXTRAS: SetExtras = SetExtras {
-    choice,
-    ability_arguments,
-    decline,
-};
 
 pub(super) fn binding(
     view: &View<'_>,
@@ -132,42 +124,54 @@ fn arguments(
     })
 }
 
-fn choice(view: &View<'_>, d: &Decision) -> Option<Choice> {
+pub(super) fn choice_shape(
+    view: &View<'_>,
+    d: &Decision,
+) -> Option<Result<ChoiceShape, ProjectionError>> {
     let DecisionKind::Choose { options, .. } = &d.kind else {
         return None;
     };
-    match d.source? {
-        Card::Jester => options
-            .iter()
-            .map(|o| match o {
-                Opt::Player(p) if *p == d.player => Some("JESTER_YOU_GAIN"),
-                Opt::Player(_) => Some("JESTER_THEY_GAIN"),
-                _ => None,
-            })
-            .collect::<Option<Vec<_>>>()
-            .map(Choice::Modes),
-        Card::YoungWitch if options.as_slice() == [Opt::Yes, Opt::No] => {
-            view.pending_reference().map(Choice::Card)
-        }
-        Card::Tournament if options.as_slice() == [Opt::Yes, Opt::No] => {
-            let me = view.me()?;
-            view.player(me)
-                .hand()?
+    let yes_no = options.as_slice() == [Opt::Yes, Opt::No];
+    let target = |card: Option<dominion_engine::CardId>, decline| {
+        card.map(|card| ChoiceShape::Target {
+            card,
+            yes: Opt::Yes,
+            no: Opt::No,
+            decline,
+        })
+        .ok_or_else(|| gap(d, "revealed card unseen"))
+    };
+    Some(match d.source? {
+        Card::Jester => Ok(ChoiceShape::Modes {
+            options: options
                 .iter()
-                .copied()
-                .find(|&id| view.card(id) == Some(Card::Province))
-                .map(Choice::Card)
+                .map(|&o| match o {
+                    Opt::Player(p) if p == d.player => Some((o, "JESTER_YOU_GAIN")),
+                    Opt::Player(_) => Some((o, "JESTER_THEY_GAIN")),
+                    _ => None,
+                })
+                .collect::<Option<Vec<_>>>()?,
+            decline: None,
+        }),
+        Card::YoungWitch if yes_no => {
+            target(view.pending_reference(), "YOUNG_WITCH_DONT_REVEAL_BANE")
         }
-        _ => None,
-    }
+        Card::Tournament if yes_no => {
+            let province = view.player(d.player).hand().and_then(|hand| {
+                hand.iter()
+                    .copied()
+                    .find(|&id| view.card(id) == Some(Card::Province))
+            });
+            target(province, "TOURNAMENT_DONT_REVEAL")
+        }
+        _ => return None,
+    })
 }
 
-fn decline(d: &Decision) -> Option<&'static str> {
+pub(super) fn decline_button(d: &Decision) -> Option<&'static str> {
     Some(match d.source? {
         Card::Hamlet => "HAMLET_DONT_DISCARD",
         Card::Plaza => "PLAZA_NO_DISCARD",
-        Card::Tournament => "TOURNAMENT_DONT_REVEAL",
-        Card::YoungWitch => "YOUNG_WITCH_DONT_REVEAL_BANE",
         _ => return None,
     })
 }
@@ -209,10 +213,9 @@ pub(super) fn ability(card: Card, ability: u8) -> Option<&'static str> {
     })
 }
 
-fn ability_arguments(
+pub(super) fn ability_arguments(
     view: &View<'_>,
     t: &Trigger,
-    _index: usize,
     c: &WireCatalog,
 ) -> Option<Result<Vec<LogArgument>, ProjectionError>> {
     match (t.card, t.ability) {
