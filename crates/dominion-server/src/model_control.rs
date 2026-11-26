@@ -40,6 +40,10 @@ pub struct ModelControl {
     pub prompts: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attached: Option<Attached>,
+    /// The model the seat's player had attached at some point of the game, for its
+    /// record: kept once the model is sent away.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub aided: Option<String>,
     #[serde(default)]
     pub advise: AdviseMode,
     /// The holder asked for a note on the seat's next decision.
@@ -128,6 +132,7 @@ impl ModelControl {
         who: &str,
         seat: u8,
         name: String,
+        version: u64,
         view: impl FnOnce() -> AgentView,
     ) -> ModelSeat {
         let holding = self.controller.as_deref() == Some(who);
@@ -140,6 +145,7 @@ impl ModelControl {
                 dominion_protocol::api::ModelHand {
                     hand: view.you.map(|p| p.hand).unwrap_or_default(),
                     decision: view.decision,
+                    version,
                 }
             }),
             prompts: self.prompts.clone(),
@@ -337,7 +343,7 @@ mod tests {
         assert!(control.player_turn().is_ok() && control.model_turn().is_err());
         (control.update("ann", Director::Player, &ModelAction::Release)).unwrap();
         assert!(control.player_turn().is_err() && control.model_turn().is_ok());
-        let seat = control.seat("ann", 0, "Ann".into(), || unreachable!());
+        let seat = control.seat("ann", 0, "Ann".into(), 0, || unreachable!());
         assert!(seat.own && !seat.holding && seat.notes.is_empty());
     }
 }

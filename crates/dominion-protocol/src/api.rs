@@ -857,6 +857,9 @@ pub struct ModelNote {
 pub struct ModelHand {
     pub hand: crate::ZoneView,
     pub decision: Option<crate::AgentDecision>,
+    /// The game's version this was read at: `decision` is the seat's as of it.
+    #[serde(default)]
+    pub version: u64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

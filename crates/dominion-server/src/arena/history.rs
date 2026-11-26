@@ -273,6 +273,7 @@ mod tests {
                     rating: None,
                     level: None,
                     agent: None,
+                    model: None,
                 })
                 .collect(),
             seed: None,

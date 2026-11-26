@@ -125,8 +125,7 @@ pub fn PlainGame() -> Element {
                 LogPanel { entries: log }
                 if ctx.offers.read().chat {
                     section { class: "panel chat-panel",
-                        h3 { "Chat" }
-                        super::chat::Chat {}
+                        super::model::Aside { heading: true }
                     }
                 }
             }

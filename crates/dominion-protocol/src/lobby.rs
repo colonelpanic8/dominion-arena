@@ -923,6 +923,19 @@ pub struct GameMeta {
     /// `forfeit_at` is to be compared with.
     #[serde(default)]
     pub now: u64,
+    /// Per seat: the model attached to a person's seat, which everyone at the table is
+    /// told of.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub models: Vec<Option<SeatModel>>,
+}
+
+/// A model attached to a person's seat.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SeatModel {
+    pub agent: String,
+    /// It holds the seat: it answers the seat's decisions, not its player.
+    pub playing: bool,
 }
 
 /// A player's dominion.games rating, as a game's page shows it beside their name.
@@ -1016,6 +1029,9 @@ pub struct RecordPlayer {
     /// For a user's own bot: its owner's name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owner: Option<String>,
+    /// The model its player had attached to the seat, if they had one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
 }
 
 /// What played a seat for one of the server's agents: its setup when it first started,
@@ -1350,6 +1366,9 @@ pub struct PastPlayer {
     /// runner reported it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent: Option<AgentRun>,
+    /// The model its player had attached to the seat, if they had one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
 }
 
 /// What played a seat.

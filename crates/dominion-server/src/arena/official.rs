@@ -223,6 +223,7 @@ impl Arena {
                         level: game.levels.get(usize::from(p.index)).copied().flatten(),
                         agent: user.and(agent.clone()),
                         owner: user.and(bot_owner.clone()),
+                        model: None,
                     }
                 })
                 .collect();

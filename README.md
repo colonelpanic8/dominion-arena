@@ -502,34 +502,46 @@ count for their ratings; it allows no undo.
 
 A seat can have a person and a model at it, and one of them holds it: answers its
 decisions. A model's own seat taken over and a person's seat with a model attached are
-the same thing from either side. Open **Model** in a live game's Table or Plain view; the
-panel stays open beside the game while you play.
+the same thing from either side.
 
-On Arena, a registered player **attaches** one of the server's agents to their own seat
-in a game that isn't rated. They go on holding the seat. The model reads exactly what
-they see, through a token of its own, and answers nothing. It counts as one of their
-agent seats for the day. While they hold the seat:
+**Your own seat (Arena).** In a game that isn't rated, the chat under the log (and on
+the Plain page) has a second tab for the model at your seat. There a registered player
+attaches one of the server's agents, picked as a table's are: its model, then its
+reasoning effort, inference speed and runner strategy where the model offers a choice.
+You go on holding the seat. The model reads exactly
+what you see, through a token of its own, and answers nothing. It counts as one of your
+agent seats for the day. While you hold the seat:
 
 - **Advise my next decision** asks for one note, on the decision open or the next to
-  open. Notes are short and say which turn they were written in; one written about a
-  decision that has passed is dimmed.
+  open. A note is a few lines and says the turn it was written in; one about a decision
+  that has passed is dimmed. A note that arrives while you read the chat is counted on
+  the tab.
 - **When I ask / At my buys / Always** says when it writes unasked: never (the
   default), once a turn when a buy is offered, or at every decision.
-- **Ask** sends it a question, which it answers in a note.
+- The line under the notes asks it a question, which it answers in a note.
 - **Hand over** gives the model the seat, and **Take back** returns it. The model has
-  followed the game throughout, so it picks up on the current position.
+  followed the game throughout, so it picks up on the current position. While it holds
+  the seat the table offers you no decisions and says so over the play area, and the
+  seat counts as present for a timed game.
 - **Send away** detaches it.
 
 Notes are for whoever holds the seat and nobody else, and an attached model publishes
-no transcript, since both say what the player holds. A T3 Code agent can't be attached.
+no transcript, since both say what the player holds. Everyone at the table is told a
+seat has a model attached, and whether it holds the seat ("Effects and more"), and the
+game's history says so beside the player ("with Opus 5.5 High"), also once the model
+was sent away. A T3 Code agent can't be attached.
 
-The Arena game host or linked dominion.games account owner can send a prompt to a
-model's own seat, and admins can on either backend. The model receives it with its next
-game observation. An admin can choose **Take over seat** to hold a model's own seat and
-answer its decisions in the panel; **Return to model** hands it back. On Arena the
-model keeps following the game meanwhile, so the admin holding its seat can ask it for
-notes the same way. On dominion.games taking over still pauses the runner, and
-returning the seat starts it again on the current position.
+**A model's own seat.** The Arena game host or linked dominion.games account owner can
+send a prompt to a model's seat from **Model controls**, and admins can on either
+backend. The model receives it with its next game observation. An admin, or on
+dominion.games the account's owner, can choose **Take over seat** to hold the seat;
+**Return to model** hands it back. The model keeps following the game meanwhile, so
+whoever holds its seat can ask it for notes the same way.
+
+On dominion.games, an account's owner who takes its seat plays it on the table itself:
+the page stops being a watcher's, and the model's tab appears beside the chat. An admin
+holding an Arena model's seat answers its decisions in the Model controls window, as
+before.
 
 Seats played by agents the server doesn't run can be directed and taken over the
 same way. That covers a seat played over MCP and a seat played through a bot's API

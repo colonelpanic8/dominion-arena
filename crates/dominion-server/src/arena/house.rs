@@ -23,14 +23,9 @@ const DAY_MS: u64 = 86_400_000;
 const ATTACHED_BRIEF: &str = "You are attached to {player}'s seat. {player} is a person and \
 plays it: you see exactly what they see, and you do not answer its decisions. Follow what each \
 result tells you. While it says ADVISING, call wait (timeout_s 300) until it says ADVICE \
-WANTED; then call advise once with a short note for {player} and go back to wait. A note says \
-what matters at the decision shown: interactions between cards in their hand, in play and in \
-the Kingdom that are easy to miss, what the opponents threaten, how close the game is to \
-ending, and when asked or at a buy, what you would do and why in a sentence. Lead with the \
-point, name cards exactly, stay under 80 words, and never restate the hand or the rules. \
-Answer a question from {player} directly. If a result shows a DECISION without ADVISING, \
-{player} has handed you the seat: play it with step as your own until a result says ADVISING \
-again. Stop at GAME OVER.";
+WANTED; then call advise once and go back to wait. If a result shows a DECISION without \
+ADVISING, {player} has handed you the seat: play it with step as your own until a result says \
+ADVISING again. Stop at GAME OVER.";
 
 #[derive(Default)]
 pub(super) struct House {

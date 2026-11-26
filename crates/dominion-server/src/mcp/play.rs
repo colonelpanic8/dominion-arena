@@ -29,7 +29,7 @@ pub struct WaitParams {
 #[serde(deny_unknown_fields)]
 pub struct AdviseParams {
     pub token: Option<String>,
-    /// The note, for the person holding your seat: under 80 words.
+    /// The note, for the person holding your seat: at most 40 words.
     pub text: String,
     /// Seconds to wait afterwards (default 45, capped at 600 and the session's lifetime).
     pub timeout_s: Option<u64>,
@@ -396,8 +396,12 @@ const QUESTION: &str = "FROM THE PERSON PLAYING THIS SEAT:";
 const ADVISING: &str = "ADVISING: a person holds this seat and answers its decisions; you answer \
                         nothing. No note is wanted now: call wait (timeout_s 300).";
 const ADVICE_WANTED: &str = "ADVISING: a person holds this seat and answers its decisions; you \
-                             answer nothing. ADVICE WANTED now, on what they asked or else the \
-                             decision shown: call advise with your note.";
+                             answer nothing. ADVICE WANTED now: call advise with a note of at \
+                             most 40 words, which is all their screen shows at once. Answer what they asked; else say what matters at \
+                             the decision shown (interactions among their cards and the \
+                             Kingdom that are easy to miss, what the others threaten, how \
+                             near the game's end is) and what you would do. Lead with the \
+                             point, name cards exactly, restate neither the hand nor the rules.";
 
 /// Request metadata controlling instructional clock text. Clock observations are always returned.
 pub(crate) const CLOCK_CUES_META: &str = "dominion.arena/clockCues";

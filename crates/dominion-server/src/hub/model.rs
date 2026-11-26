@@ -82,7 +82,8 @@ impl Hub {
                         model: false,
                     });
                 }
-                control.seat(who, seat, table.names()[i].clone(), || {
+                let version = *game.version.borrow();
+                control.seat(who, seat, table.names()[i].clone(), version, || {
                     table.view(PlayerId(seat))
                 })
             })
@@ -171,6 +172,7 @@ impl Hub {
         let token = token();
         let control = ModelControl {
             controller: Some(who.into()),
+            aided: Some(name.clone()),
             attached: Some(crate::model_control::Attached {
                 user,
                 name,
@@ -213,7 +215,10 @@ impl Hub {
             }
         };
         self.commit(&game, &mut table, None, |meta, _| {
-            meta.model_controls[i] = ModelControl::default();
+            meta.model_controls[i] = ModelControl {
+                aided: meta.model_controls[i].aided.take(),
+                ..ModelControl::default()
+            };
         })?;
         lock(&self.index).seats.remove(&token);
         game.version.send_modify(|v| *v += 1);
@@ -527,8 +532,20 @@ mod tests {
         assert_eq!(listed.notes[0].decision.as_ref(), Some(&decision.id));
         assert!(!hub.wait(&model, soon).await.unwrap());
 
+        let at_seat = |playing| {
+            let models = hub.seat_view(&person, None).unwrap().meta.models;
+            let told = models[person.seat.index()].as_ref().unwrap();
+            assert_eq!((told.agent.as_str(), told.playing), ("Astra", playing));
+            assert_eq!(models.iter().flatten().count(), 1);
+        };
+        at_seat(false);
         hub.model_action(&id, who, None, &request(ModelAction::Release))
             .unwrap();
+        at_seat(true);
+        // While its model plays the seat, the model is who is there for it.
+        hub.forget_last_call(&person);
+        hub.find(&job.token).unwrap();
+        assert!(hub.seat_view(&person, None).unwrap().meta.connected[person.seat.index()]);
         assert!(hub.answer_with(&person, &answer, None).is_err());
         assert!(hub.wait(&model, soon).await.unwrap());
         assert_eq!(advising(&model), None);

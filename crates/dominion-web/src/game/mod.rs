@@ -59,6 +59,8 @@ pub struct GameCtx {
     /// The question before resigning is open.
     pub resigning: Signal<bool>,
     pub offers: Memo<Offers>,
+    /// The seats with a model at them, as the viewer may see them.
+    pub models: model::Models,
 }
 
 /// What a game's source has besides its views. The page draws only what is offered.
@@ -100,20 +102,33 @@ pub fn use_watched_game(
     let watching = use_memo(|| true);
     let deciding = use_memo(move || state.read().deciding);
     let resigning = use_signal(|| false);
+    let models = model::use_models(game, state, offers);
+    // Whoever holds the seat watched answers for it where it is drawn.
+    let answer = Callback::new(move |answer: Answer| {
+        let st = state.peek();
+        let seat = st.view.as_ref().and_then(|v| v.seat);
+        if let (Some(seat), state::Hold::Taken { .. }) = (seat, &st.hold) {
+            let mut answered = models.answered;
+            answered.set(Some(answer.decision.clone()));
+            let action = dominion_protocol::api::ModelAction::Answer { answer };
+            models.act.call((seat, action));
+        }
+    });
     use_context_provider(|| GameCtx {
         game,
         seat,
         watching,
         state,
         deciding,
-        submit: Callback::new(|_| {}),
-        submit_way: Callback::new(|_| {}),
+        submit: answer,
+        submit_way: Callback::new(move |(a, _): (Answer, String)| answer.call(a)),
         undo: Callback::new(|_| {}),
         answer_undo: Callback::new(|_| {}),
         cancel_undo: Callback::new(|_| {}),
         resign: Callback::new(|_| {}),
         resigning,
         offers,
+        models,
     })
 }
 
@@ -594,15 +609,6 @@ pub fn ViewToggle(table_on: Signal<bool>) -> Element {
     }
 }
 
-/// The seat shown, when it is account `name`'s own in a game a model may help with: one
-/// that isn't rated.
-fn own_seat(ctx: &GameCtx, name: &str) -> Option<u8> {
-    let seat = ctx.seat.read().as_ref()?.seat;
-    let state = ctx.state.read();
-    let user = state.meta.users.get(usize::from(seat))?.as_ref()?;
-    (!state.meta.rated && user.name == name).then_some(seat)
-}
-
 /// The bar over every game: its title, whose view is shown (the children), how many
 /// watch, the view toggle and the menu.
 #[component]
@@ -626,8 +632,8 @@ pub fn GameBar(title: String, table_on: Signal<bool>, children: Element) -> Elem
                 span { class: "muted", "data-watchers": "{watchers}", title: "People watching this game", "{watchers} watching" }
             }
             if running && let (Some(url), Some(me)) = (endpoint, me) {
-                model::ModelControls { key: "{url}-{game}-{me.user.name}", url, game, admin: me.admin,
-                    mine: own_seat(&ctx, &me.user.name) }
+                model::ModelControls { key: "{url}-{game}-{me.user.name}",
+                    take: me.admin || !url.starts_with("/api/games/") }
             }
             ViewToggle { table_on }
             menu::GameMenu {}
@@ -654,6 +660,7 @@ pub fn GameShell(title: String, who: Element, extra: Element) -> Element {
             {bar}
             {extra}
             WaitingNotice {}
+            model::HeldNotice {}
             plain::PlainGame {}
             menu::ResignDialog {}
         }
@@ -710,6 +717,7 @@ pub fn GamePage(id: String) -> Element {
             transcript: agents.then(|| game.read().clone()),
         }
     });
+    let models = model::use_models(game, state, offers);
     use_context_provider(|| GameCtx {
         game,
         seat,
@@ -736,6 +744,7 @@ pub fn GamePage(id: String) -> Element {
         }),
         resigning: Signal::new(false),
         offers,
+        models,
     });
 
     let take_token = move |token: String| {

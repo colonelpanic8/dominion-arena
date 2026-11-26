@@ -94,7 +94,7 @@ impl PlaySeat for Session {
             clock,
             clock_info,
             chat: update.chat.lines,
-            advising: None,
+            advising: self.managed.as_ref().and_then(|(h, _)| h.advising(&view)),
             view,
         };
         Ok(Some((seat, observation)))
@@ -112,8 +112,30 @@ impl PlaySeat for Session {
         self.client.answer(answer.clone(), expect).await
     }
 
+    /// While a person holds the account's seat, its model waits until it owes them a
+    /// note or has the seat back: the seat's own decisions are theirs.
     async fn wait(&self, timeout: Duration) -> Result<(), String> {
-        self.client.wait(timeout.as_secs()).await.map(drop)
+        let advising = || {
+            let view = self.client.current().view().ok().flatten()?;
+            self.managed.as_ref()?.0.advising(&view)
+        };
+        let deadline = tokio::time::Instant::now() + timeout;
+        while let Some(advising) = advising() {
+            if advising.wanted || tokio::time::Instant::now() >= deadline {
+                return Ok(());
+            }
+            tokio::time::sleep(Duration::from_millis(400)).await;
+        }
+        let left = deadline.saturating_duration_since(tokio::time::Instant::now());
+        self.client.wait(left.as_secs()).await.map(drop)
+    }
+
+    fn advise(&self, text: &str) -> Result<(), String> {
+        let view = self.client.current().view()?;
+        match (&self.managed, view) {
+            (Some((hosted, _)), Some(view)) => hosted.advise(&view, text),
+            _ => Err("REFUSED: nobody holds this seat for you to advise".into()),
+        }
     }
 
     fn cards(&self, names: &[String]) -> Result<Vec<GlossaryEntry>, String> {

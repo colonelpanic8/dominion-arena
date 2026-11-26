@@ -1,10 +1,7 @@
-.model-panel {
-  position: fixed; z-index: 60; top: 3.2rem; right: .75rem;
-  display: grid; gap: .7rem; align-content: start;
-  box-sizing: border-box;
-  width: min(24rem, calc(100vw - 1.5rem));
-  max-height: calc(100dvh - 4rem);
-  padding: 1rem;
+dialog.model-controls {
+  width: min(31rem, calc(100vw - 1.5rem));
+  max-height: calc(100dvh - 2rem);
+  padding: clamp(1rem, 4vw, 1.6rem);
   overflow: auto;
   color: var(--text);
   background: var(--panel-2);
@@ -15,45 +12,57 @@
   text-shadow: none;
   white-space: normal;
 }
-.model-panel header, .model-panel footer, .model-send {
+.model-controls[open] { display: grid; gap: .8rem; }
+.model-controls::backdrop { background: #0008; }
+.model-controls header, .model-controls footer, .model-send {
   display: flex; align-items: center; justify-content: space-between; gap: .9rem;
 }
-.model-panel h2 { margin: 0; color: var(--text); font: 1.3rem/1.15 var(--title); }
-.model-panel p { margin: 0; }
+.model-controls h2 { margin: 0; color: var(--text); font: 1.65rem/1.15 var(--title); }
+.model-controls p { margin: 0; }
 .model-seat-name { color: var(--gold-pale); overflow-wrap: anywhere; }
-.model-panel .model-close { align-self: start; font-size: 1.4rem; }
-.model-panel label { display: grid; gap: .35rem; font-weight: 650; }
-.model-panel select, .model-panel textarea {
+.model-controls .model-close { align-self: start; font-size: 1.4rem; }
+.model-controls label { display: grid; gap: .35rem; font-weight: 650; }
+.model-controls select, .model-controls textarea {
   box-sizing: border-box; width: 100%; min-width: 0; padding: .7rem;
   color: var(--text); background: var(--bg); border: 1px solid var(--line); font: inherit;
 }
-.model-panel textarea { resize: vertical; min-height: 3.2rem; }
+.model-controls textarea { resize: vertical; min-height: 5rem; }
 .model-status { display: flex; gap: .5rem; align-items:center; padding: .55rem 0; border-block: 1px solid var(--line-soft); }
 .model-dot { background: var(--gold); width: .45rem; height: .45rem; border-radius: 50%; }
-.model-panel footer { border-top: 1px solid var(--line-soft); padding-top: .85rem; }
-.model-panel footer span, .model-panel small { color: var(--text-soft); font-size: .88rem; }
-.model-panel button { min-height: 44px; flex-shrink: 0; }
+.model-controls footer { border-top: 1px solid var(--line-soft); padding-top: .85rem; }
+.model-controls footer span, .model-controls small { color: var(--text-soft); font-size: .88rem; }
+.model-controls button { min-height: 44px; flex-shrink: 0; }
 .model-history { color: var(--text-soft); }
 .model-history summary { cursor: pointer; }
 .model-history ol { max-height: 10rem; overflow: auto; padding-inline-start: 1.6rem; }
 .model-history li { white-space: pre-wrap; overflow-wrap: anywhere; margin: .4rem 0; }
-.model-panel .model-notice { color: var(--good); }
+.model-controls .model-notice { color: var(--good); }
 @media (max-width: 380px) {
-  .model-panel footer, .model-send { flex-wrap: wrap; }
+  .model-controls footer, .model-send { flex-wrap: wrap; }
 }
 .model-hand { display: flex; flex-wrap: wrap; align-items: baseline; gap: .25rem .7rem; }
 .model-hand h3 { width: 100%; margin: 0; color: var(--text-soft); font: 600 .9rem var(--ui); }
-.model-panel footer { flex-wrap: wrap; }
-.model-about { color: var(--text-soft); font-size: .92rem; }
-.model-unread {
-  margin-inline-start: .4rem; padding: 0 .4rem; border-radius: 1rem;
-  color: var(--bg); background: var(--gold); font-size: .8rem; font-weight: 700;
-}
-.model-notes { display: grid; gap: .5rem; max-height: 38dvh; overflow: auto; }
-.model-note { padding: .5rem .65rem; border-inline-start: 3px solid var(--gold); background: var(--bg); }
-.model-note p { white-space: pre-wrap; overflow-wrap: anywhere; }
-.model-note[data-fresh="turn"] { border-color: var(--gold-deep); }
-.model-note[data-fresh="old"] { border-color: var(--line); color: var(--text-soft); }
-.model-note-when { color: var(--text-soft); font-size: .8rem; }
-.model-modes { display: flex; flex-wrap: wrap; gap: .4rem; }
-.model-modes button { min-height: 36px; }
+
+/* What the model wrote, in the dialog and in the pane beside the chat. */
+.model-notes { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; min-height: 3em; max-height: 14em; user-select: text; }
+.model-note { padding: .08em 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.model-note + .model-note { margin-top: .4em; }
+.model-note[data-fresh="old"], .model-note-none, .model-about { color: var(--text-muted); }
+.model-note-none, .model-about { margin: 0; }
+.model-note-when { color: var(--text-faint); font-size: .85em; font-weight: 700; }
+
+/* The pane beside the chat: the seat you share with a model. */
+.aside-tabs { display: flex; flex-wrap: wrap; gap: .4em; align-items: center; justify-content: space-between; margin-bottom: .6em; }
+.aside-tablist, .aside-seat { display: inline-flex; gap: .4em; align-items: center; }
+.aside-seat button.toggle { padding: .25em .8em; font-size: .9em; }
+.model-unread { margin-inline-start: .45em; padding: 0 .4em; border-radius: 1em; color: #000; background: var(--gold); font-size: .8em; font-weight: 700; }
+.model-pane { display: flex; flex-direction: column; gap: .5em; min-height: 0; }
+.model-row { display: flex; gap: .4em; align-items: center; }
+.model-row > button { flex: none; }
+/* A model, then its effort, speed and strategy where it has a choice of them. */
+.model-pick { flex-wrap: wrap; }
+.model-pane .model-pick select { flex: 1 1 6.5em; min-width: 6.5em; }
+.model-pane .model-pick select:first-child { flex: 2 1 9em; }
+.model-pick > button { margin-inline-start: auto; }
+.model-pane select { min-width: 0; flex: 1; }
+.model-pane .game-chat-input { box-sizing: border-box; }

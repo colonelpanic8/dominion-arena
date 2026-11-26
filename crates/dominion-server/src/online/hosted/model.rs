@@ -30,6 +30,35 @@ impl Hosted {
         }
     }
 
+    /// What the account's model is told while a person holds its seat in the game `view`
+    /// shows.
+    pub(in crate::online) fn advising(
+        &self,
+        view: &dominion_protocol::AgentView,
+    ) -> Option<crate::hub::Advising> {
+        let model = crate::hub::lock(&self.model);
+        let held = view.game.running
+            && view.game.id.as_ref() == Some(&model.game)
+            && model.control.controller.is_some();
+        held.then(|| crate::hub::Advising {
+            wanted: (model.control).wants_advice(&crate::model_control::Moment::of(view)),
+        })
+    }
+
+    /// Keeps what the account's model wrote for the person holding its seat.
+    pub(in crate::online) fn advise(
+        &self,
+        view: &dominion_protocol::AgentView,
+        text: &str,
+    ) -> Result<(), String> {
+        let mut model = crate::hub::lock(&self.model);
+        if view.game.id.as_ref() != Some(&model.game) {
+            return Err("REFUSED: nobody holds this seat for you to advise".into());
+        }
+        let now = crate::model_control::Moment::of(view);
+        (model.control.note(&now, text, crate::hub::now_ms())).map_err(|e| format!("REFUSED: {e}"))
+    }
+
     pub(in crate::online) fn check_model(&self, generation: u64) -> Result<(), String> {
         let model = crate::hub::lock(&self.model);
         if generation != model.generation {
@@ -64,16 +93,10 @@ fn model_user(web: &Web, headers: &HeaderMap) -> Result<(String, bool), crate::h
     Ok((ident.user, admin))
 }
 
-fn model_status(web: &Web, admin: Option<&str>) -> Vec<dominion_protocol::api::ModelSeat> {
-    let Some(view) = web
-        .hosted
-        .client
-        .current()
-        .view()
-        .ok()
-        .flatten()
-        .filter(|v| v.game.running)
-    else {
+fn model_status(web: &Web, who: &str) -> Vec<dominion_protocol::api::ModelSeat> {
+    let update = web.hosted.client.current();
+    let version = update.reducer.revision;
+    let Some(view) = update.view().ok().flatten().filter(|v| v.game.running) else {
         return vec![];
     };
     let (Some(game), Some(seat)) = (view.game.id.as_ref(), view.seat) else {
@@ -91,9 +114,10 @@ fn model_status(web: &Web, admin: Option<&str>) -> Vec<dominion_protocol::api::M
         Default::default()
     };
     vec![control.seat(
-        admin.unwrap_or_default(),
+        who,
         seat,
         job.map(|j| j.agent).unwrap_or_else(|| model.agent.clone()),
+        version,
         || view,
     )]
 }
@@ -104,10 +128,8 @@ pub(super) async fn model_seats(
 ) -> Result<axum::Json<Vec<dominion_protocol::api::ModelSeat>>, crate::http::Error> {
     let (who, admin) = model_user(&web, &headers)?;
     let _guard = web.hosted.control.lock().await;
-    Ok(axum::Json(model_status(
-        &web,
-        admin.then_some(who.as_str()),
-    )))
+    let _ = admin;
+    Ok(axum::Json(model_status(&web, &who)))
 }
 
 pub(super) async fn model_action(
@@ -121,7 +143,7 @@ pub(super) async fn model_action(
         Err(e) => return e.into_response(),
     };
     let _guard = web.hosted.control.lock().await;
-    let Some(seat) = model_status(&web, admin.then_some(who.as_str())).pop() else {
+    let Some(seat) = model_status(&web, &who).pop() else {
         return refused("This model is no longer playing");
     };
     let current = web
@@ -143,9 +165,10 @@ pub(super) async fn model_action(
             Default::default()
         }
     };
+    // The account's owner is its player: they hold its seat as an admin may.
     let role = match admin {
         true => crate::model_control::Director::Admin,
-        false => crate::model_control::Director::Host,
+        false => crate::model_control::Director::Player,
     };
     if let Err(e) = control.update(&who, role, &req.action) {
         return crate::http::Error::from(e).into_response();
@@ -156,6 +179,8 @@ pub(super) async fn model_action(
                 return refused(e);
             }
         }
+        // The model went on reading along while its seat was held: it has it back.
+        ModelAction::Release if web.job().is_some_and(|j| j.game_id == req.game) => {}
         ModelAction::Release => {
             let strategy = web
                 .access
@@ -182,17 +207,13 @@ pub(super) async fn model_action(
             }
             drop(reservation);
         }
-        ModelAction::Take => web.set_job(None),
         _ => {}
     }
     {
         let mut model = crate::hub::lock(&web.hosted.model);
-        if matches!(req.action, ModelAction::Take) {
-            model.generation += 1;
-        }
         model.game = req.game;
         model.control = control;
         model.agent = seat.name;
     }
-    axum::Json(model_status(&web, admin.then_some(who.as_str()))).into_response()
+    axum::Json(model_status(&web, &who)).into_response()
 }

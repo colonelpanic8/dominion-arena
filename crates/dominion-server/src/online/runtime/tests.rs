@@ -921,11 +921,9 @@ async fn hosted_watching_is_public_but_management_and_mcp_require_owner() {
             .text
             .contains("Keep the Village.")
     );
-    assert_eq!(
-        action(&owner, take.clone()).send().await.unwrap().status(),
-        reqwest::StatusCode::FORBIDDEN
-    );
-    let seats: Vec<dominion_protocol::api::ModelSeat> = action(&admin, take)
+    // The account's owner holds its seat, as an admin may; its model goes on reading
+    // along, answers nothing and writes when asked.
+    let seats: Vec<dominion_protocol::api::ModelSeat> = action(&owner, take.clone())
         .send()
         .await
         .unwrap()
@@ -934,6 +932,7 @@ async fn hosted_watching_is_public_but_management_and_mcp_require_owner() {
         .json()
         .await
         .unwrap();
+    assert!(seats[0].holding && seats[0].controlled);
     let decision = seats[0]
         .playing
         .as_ref()
@@ -941,7 +940,45 @@ async fn hosted_watching_is_public_but_management_and_mcp_require_owner() {
         .decision
         .as_ref()
         .unwrap();
-    assert!(arena.official_job(crate::online::LEGACY_ID).is_none());
+    let held = arena.official_job(crate::online::LEGACY_ID).unwrap();
+    assert_eq!(held.token, first.token);
+    assert_eq!(
+        action(&admin, take).send().await.unwrap().status(),
+        reqwest::StatusCode::CONFLICT
+    );
+    let step = serde_json::json!({
+        "decision": decision.id, "indices": [decision.options[0].index], "timeout_s": 0,
+    });
+    let refused = capability.call("step", step).await.unwrap();
+    assert!(
+        !refused.ok && refused.text.contains("A person is playing this seat"),
+        "{}",
+        refused.text
+    );
+    let wait = |seconds: u64| capability.call("wait", serde_json::json!({ "timeout_s": seconds }));
+    let idle = wait(0).await.unwrap();
+    assert!(idle.text.contains("No note is wanted now"), "{}", idle.text);
+    action(&owner, serde_json::json!({"type":"request"}))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap();
+    let wanted = wait(5).await.unwrap();
+    assert!(wanted.text.contains("ADVICE WANTED"), "{}", wanted.text);
+    let note = serde_json::json!({ "text": "Play the Village first.", "timeout_s": 0 });
+    let advised = capability.call("advise", note).await.unwrap();
+    assert!(advised.ok && advised.text.contains("No note is wanted now"));
+    let seats: Vec<dominion_protocol::api::ModelSeat> = http
+        .get(format!("{manager}/model"))
+        .bearer_auth(&owner)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(seats[0].notes[0].text, "Play the Village first.");
     let answer = Answer {
         decision: decision.id.clone(),
         indices: Some(vec![decision.options[0].index]),
@@ -958,23 +995,29 @@ async fn hosted_watching_is_public_but_management_and_mcp_require_owner() {
         }
         requests
     });
-    action(&admin, serde_json::json!({"type":"answer","answer":answer}))
+    action(&owner, serde_json::json!({"type":"answer","answer":answer}))
         .send()
         .await
         .unwrap()
         .error_for_status()
         .unwrap();
     let mut requests = backend.await.unwrap();
-    action(&admin, serde_json::json!({"type":"release"}))
+    action(&owner, serde_json::json!({"type":"release"}))
         .send()
         .await
         .unwrap()
         .error_for_status()
         .unwrap();
-    assert_ne!(
+    // The model has the seat back in the conversation it had.
+    assert_eq!(
         arena.official_job(crate::online::LEGACY_ID).unwrap().token,
         first.token
     );
+    let back = capability
+        .call("state", serde_json::json!({}))
+        .await
+        .unwrap();
+    assert!(back.ok && !back.text.contains("ADVISING"), "{}", back.text);
     let response = http
         .delete(format!("{manager}/agent"))
         .bearer_auth(&owner)

@@ -573,9 +573,16 @@ impl Hosted {
         }
     }
 
-    /// Notes that `seat`'s player is here. A model attached to a person's seat isn't them.
+    /// Whether the model attached to seat `i` holds it: it is then who plays the seat.
+    fn model_holds(&self, i: usize) -> bool {
+        (lock(&self.meta).model_controls.get(i))
+            .is_some_and(|c| c.attached.is_some() && c.controller.is_none())
+    }
+
+    /// Notes that `seat`'s player is here. A model attached to a person's seat is them
+    /// only while it holds the seat.
     fn touch(&self, seat: &Seat) {
-        if seat.model {
+        if seat.model && !self.model_holds(seat.seat.index()) {
             return;
         }
         if let Some(j) = self.joined.get(seat.seat.index()) {
@@ -803,7 +810,8 @@ impl Default for Hub {
 /// Counts a call waiting on a game for a seat, until dropped.
 pub struct Connection {
     game: Arc<Hosted>,
-    /// None: the model attached to a person's seat, which isn't them being there.
+    /// None: the model attached to a person's seat who holds it themselves, which isn't
+    /// them being there.
     seat: Option<usize>,
 }
 
@@ -2216,6 +2224,17 @@ impl Hub {
             ratings: vec![],
             online_ratings: vec![],
             now,
+            models: match meta.model_controls.iter().any(|c| c.attached.is_some()) {
+                true => (meta.model_controls.iter())
+                    .map(|c| {
+                        Some(dominion_protocol::lobby::SeatModel {
+                            agent: c.attached.as_ref()?.name.clone(),
+                            playing: c.controller.is_none(),
+                        })
+                    })
+                    .collect(),
+                false => vec![],
+            },
         };
         (shown, meta.owners.clone())
     }
@@ -2417,7 +2436,8 @@ impl Hub {
     /// there is one, the seat is connected.
     pub fn connect(&self, seat: &Seat) -> Result<Connection, HubError> {
         let game = self.read(&seat.game)?;
-        let seat = (!seat.model).then(|| seat.seat.index());
+        let i = seat.seat.index();
+        let seat = (!seat.model || game.model_holds(i)).then_some(i);
         if let Some(seat) = seat {
             game.streams[seat].fetch_add(1, Ordering::Relaxed);
         }

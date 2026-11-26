@@ -155,12 +155,15 @@ fn a_player_attaches_an_agent_to_their_own_seat_and_the_runner_is_told_until_it_
     let attach = |game: &str, who: &Ident, seat| {
         arena.attach_model(who, game, seat, "Claude Opus", Default::default())
     };
-    assert!(matches!(attach(&rated, &ada, 0), Err(Error::Hub(_))));
+    let seat = arena.hub.owned_in(&rated, &ada.user)[0].seat.0;
+    assert!(matches!(attach(&rated, &ada, seat), Err(Error::Hub(_))));
     end(&arena, &rated);
 
     let game = game_between(&arena, &ada, &bo, false);
-    assert!(matches!(attach(&game, &bo, 0), Err(Error::Hub(_))));
-    attach(&game, &ada, 0).unwrap();
+    let own = arena.hub.owned_in(&game, &ada.user).remove(0);
+    let seat = own.seat.0;
+    assert!(matches!(attach(&game, &bo, seat), Err(Error::Hub(_))));
+    attach(&game, &ada, seat).unwrap();
     assert_eq!(arena.lobby(Some(&ada)).house.left, Some(4));
     let jobs_now = jobs(&mut told).unwrap();
     let [job] = jobs_now.as_slice() else {
@@ -169,7 +172,7 @@ fn a_player_attaches_an_agent_to_their_own_seat_and_the_runner_is_told_until_it_
     assert!(job.attached && !job.transcript && job.agent == "Claude Opus");
     assert_eq!(
         (job.game_id.as_str(), job.seat, job.name.as_str()),
-        (game.as_str(), 0, "Ada")
+        (game.as_str(), seat, "Ada")
     );
     assert!(
         job.brief
@@ -177,11 +180,10 @@ fn a_player_attaches_an_agent_to_their_own_seat_and_the_runner_is_told_until_it_
             .unwrap()
             .contains("attached to Ada's seat")
     );
-    let own = arena.hub.owned_in(&game, &ada.user).remove(0);
     let model = arena.hub.claim(&game, &job.token).unwrap();
     assert!(model.model && !own.model && model.seat == own.seat);
 
-    arena.detach_model(&ada, &game, 0).unwrap();
+    arena.detach_model(&ada, &game, seat).unwrap();
     assert_eq!(jobs(&mut told), Some(vec![]));
     assert!(arena.hub.claim(&game, &job.token).is_err());
 }

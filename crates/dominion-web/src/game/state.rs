@@ -45,6 +45,28 @@ pub struct GameState {
     pub chat: Vec<ChatMessage>,
     /// The feed's chat counter the chat was last fetched at, once it has been.
     pub chat_seen: Option<u64>,
+    /// Who answers the seat shown, where it isn't simply the page's own player.
+    pub hold: Hold,
+    /// The decision and the watching mark the server's view carried, whatever `hold`
+    /// makes of them.
+    pub(super) served: (Option<dominion_protocol::AgentDecision>, bool),
+}
+
+/// Who answers the decisions of the seat a page shows, where a model is at that seat.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub enum Hold {
+    /// Whoever the view says: the page's own player, or nobody here.
+    #[default]
+    Served,
+    /// The model attached to the page's own seat holds it: its decisions aren't the
+    /// page's to answer.
+    Model,
+    /// The page holds a seat it otherwise watches: that seat's decision as of `version`
+    /// of the game.
+    Taken {
+        decision: Option<Box<dominion_protocol::AgentDecision>>,
+        version: u64,
+    },
 }
 
 /// What to do after applying a response.
@@ -58,6 +80,30 @@ pub enum Applied {
 }
 
 impl GameState {
+    /// Says who answers the seat shown, and makes the view agree.
+    pub fn set_hold(&mut self, hold: Hold) {
+        if self.hold != hold {
+            self.hold = hold;
+            self.settle();
+        }
+    }
+
+    /// Makes the view's decision the one `hold` leaves the page: none while a model holds
+    /// the seat, the held seat's own while the page holds a seat it watches.
+    fn settle(&mut self) {
+        let Some(view) = &mut self.view else {
+            return;
+        };
+        (view.decision, view.spectating) = match &self.hold {
+            Hold::Served => self.served.clone(),
+            Hold::Model => (None, self.served.1),
+            Hold::Taken { decision, version } => {
+                let decision = decision.as_deref().cloned();
+                (decision.filter(|_| *version == self.version), false)
+            }
+        };
+    }
+
     /// The `logFrom` to ask for next: the seq after the last one held.
     pub fn log_from(&self) -> usize {
         self.log.last().map_or(0, |e| e.seq + 1)
@@ -106,12 +152,14 @@ impl GameState {
         };
         if newer {
             self.version = sv.version;
+            self.served = (sv.view.decision.clone(), sv.view.spectating);
             self.view = Some(sv.view);
             self.deciding = sv.deciding;
             self.table = sv.table;
             self.can_undo = sv.can_undo;
             self.undo = sv.undo;
             self.meta = sv.meta;
+            self.settle();
         }
         self.error = None;
         if complete {

@@ -1102,6 +1102,7 @@ mod venue_tests {
                 level: None,
                 agent: None,
                 owner: None,
+                model: None,
             };
             let games = [
                 ("g1", true, [("Ada", 1), ("Bo", 2)]),

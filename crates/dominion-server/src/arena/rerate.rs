@@ -328,6 +328,7 @@ mod tests {
             level: None,
             agent: None,
             owner: None,
+            model: None,
         }
     }
 

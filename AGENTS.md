@@ -203,9 +203,11 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
   src/game/meta.rs        what `SeatView.meta` makes the page say: the account on a bar,
                           the deciding seat's time, how the game ended (pure)
   src/game/chat.rs        the game's chat (`game-<id>`): under the log, and on the plain page
-  src/game/model.rs       the Model panel (README "Sharing a seat with a model"): who holds a
-                          seat, attaching an agent to your own, its notes, asking it, handing
-                          the seat over and taking it back
+  src/game/model.rs       a seat shared with a model (README "Sharing a seat with a model"):
+                          `Models` (in `GameCtx`) keeps the game's such seats and tells the
+                          state who answers the seat shown (`state::Hold`); `Aside` puts
+                          `ModelPane` (notes, asking, handing over) in a tab beside the
+                          chat; `HeldNotice`; `ModelControls`, the window for models' own seats
   src/game/menu.rs        the game menu (Resign, Lobby) and the question before resigning
   src/game/undo.rs        the undo request waiting: withdraw yours, allow or refuse another's
   src/game/replay.rs      `/game/<id>/replay`: a finished game on the table at any answer, stepped
