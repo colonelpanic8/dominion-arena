@@ -641,7 +641,7 @@ a.lb-user-name:hover { text-decoration: underline; }
 .lb-kingdom-options { justify-content: space-evenly; margin-bottom: 1vh; }
 .lb-kingdom-options > div:not(.lb-fieldset-title) { margin-bottom: .5vh; }
 .lb-game-options { margin-top: auto; }
-.lb-game-options .lb-row { margin-bottom: .5vh; }
+.lb-game-options .lb-row { height: 3.6vh; margin-bottom: .2vh; }
 
 .lb-kingdom-display { display: flex; justify-content: center; width: 100%; height: calc(19 * var(--lu)); }
 .lb-kingdom-cards {
@@ -946,12 +946,18 @@ a.lb-user-name:hover { text-decoration: underline; }
 .lb-last-game { margin: 1vh 0 0; color: var(--text-soft); font: 1.7vh var(--ui); }
 .lb-last-game a { color: var(--gold); }
 .lb-refused { margin: .5vh 2vh; color: var(--bad); font: 1.7vh var(--ui); text-align: center; }
+/* Beside Ready, on the buttons' line. */
 .lb-table-note {
   position: absolute;
   left: 2vh;
-  top: calc(89.5vh - 2px);
-  width: 30vw;
+  right: calc(50% + 14.25vh + .5vw + 2vh);
+  top: calc(88vh - 2px);
+  height: 5.8vh;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
   margin: 0;
+  text-align: right;
   color: var(--gold);
   font: 1.9vh var(--ui);
 }
