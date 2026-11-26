@@ -168,6 +168,8 @@ pub struct CardDef {
     /// The printed cost has a `+`: it can be overpaid for (Guilds).
     pub overpay: bool,
     pub types: Types,
+    /// The type names in the order printed on the card.
+    pub printed_types: &'static [&'static str],
     /// Vanilla bonuses on the card's leading lines.
     pub plus: Plus,
     /// $ produced when played as a Treasure, for Treasures with a printed value.
