@@ -576,13 +576,71 @@ fn span(d: &AgentDecision, group: usize) -> String {
     }
 }
 
+/// Options by their numbers: "options 0-2", "option 4", "options 0, 2 or 5".
+fn option_list(indices: &[u32]) -> String {
+    match indices {
+        [] => "no option".into(),
+        [one] => format!("option {one}"),
+        [first, .., last] if indices.windows(2).all(|w| w[1] == w[0] + 1) => {
+            format!("options {first}-{last}")
+        }
+        [init @ .., last] => format!(
+            "options {} or {last}",
+            init.iter()
+                .map(u32::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    }
+}
+
+/// Where Way group `leaf` finds the card it plays: the options of the cards its question
+/// says it affects ("options 0-2 (Envoy, Shaman)"), else every group needing no partner.
+fn way_partners(out: &Indexed<'_>, leaf: usize) -> String {
+    let affected = match &out.leaves[leaf].0.kind {
+        QuestionKind::Choice { affected, .. } => affected.as_slice(),
+        _ => &[],
+    };
+    let mut indices = vec![];
+    let mut names: Vec<&str> = vec![];
+    for (o, (l, target)) in out.decision.options.iter().zip(&out.targets) {
+        let (Target::Select(pos), QuestionKind::Choice { elements, .. }) =
+            (target, &out.leaves[*l].0.kind)
+        else {
+            continue;
+        };
+        let card = match elements {
+            QuestionElements::Cards(cards) => cards.get(*pos as usize).copied(),
+            // An ability that plays a card (Trail's).
+            QuestionElements::Abilities(abilities) => {
+                abilities.get(*pos as usize).map(|a| a.association)
+            }
+            _ => None,
+        };
+        if *l == leaf || !card.is_some_and(|c| affected.contains(&c)) {
+            continue;
+        }
+        indices.push(o.index);
+        if let Some(name) = o.card.as_deref().filter(|n| !names.contains(n)) {
+            names.push(name);
+        }
+    }
+    if indices.is_empty() {
+        return (0..out.leaves.len())
+            .filter(|&g| g != leaf && !out.leaves[g].0.needs_partner())
+            .map(|g| span(&out.decision, g))
+            .collect::<Vec<_>>()
+            .join(" or ");
+    }
+    match names.as_slice() {
+        [] => option_list(&indices),
+        _ => format!("{} ({})", option_list(&indices), names.join(", ")),
+    }
+}
+
 /// Makes every group of a compound decision say what it is for: a Way says it plays
 /// the card chosen beside it, and groups whose prompts match say their role.
 fn name_roles(out: &mut Indexed<'_>) {
-    let partners: Vec<usize> = (0..out.leaves.len())
-        .filter(|&g| !out.leaves[g].0.needs_partner())
-        .collect();
-    let spans: Vec<_> = partners.iter().map(|&g| span(&out.decision, g)).collect();
     let mut prompts: Vec<String> = out
         .decision
         .groups
@@ -590,11 +648,14 @@ fn name_roles(out: &mut Indexed<'_>) {
         .map(|g| g.prompt.clone())
         .collect();
     for (g, (q, _)) in out.leaves.iter().enumerate() {
-        if q.description.question_type == WAY && !spans.is_empty() {
+        if q.description.question_type != WAY {
+            continue;
+        }
+        let partners = way_partners(out, g);
+        if !partners.is_empty() {
             prompts[g] = format!(
-                "{}: a Way to play the card you choose with; give it only together with a card to play from {}",
+                "{}: a Way to play the card you choose with, instead of playing it as itself; give it only together with the card to play, from {partners}",
                 prompts[g],
-                spans.join(" or ")
             );
         }
     }
@@ -853,6 +914,12 @@ fn element_options(
                 let label = match &card {
                     Some(name) if !label.contains(name) => format!("{name}: {label}"),
                     _ => label,
+                };
+                // Copies of one ability stacked up, as the official client marks them.
+                let label = if a.copy_total >= 2 {
+                    format!("{label} ({}/{})", a.copy_index, a.copy_total)
+                } else {
+                    label
                 };
                 Ok(option("trigger", label, card, None))
             })
@@ -1298,13 +1365,9 @@ impl Question {
                     .map(|o| o.label.as_str())
                     .collect::<Vec<_>>()
                     .join(", ");
-                let partners: Vec<_> = (0..indexed.leaves.len())
-                    .filter(|&g| g != leaf && !indexed.leaves[g].0.needs_partner())
-                    .map(|g| span(&indexed.decision, g))
-                    .collect();
                 return Err(rejected(format!(
                     "{label} is only the Way to play a card with: alone it does nothing. Add the card to play from {} in the same answer, or leave the Way out",
-                    partners.join(" or ")
+                    way_partners(&indexed, leaf)
                 )));
             }
         }
@@ -1963,6 +2026,37 @@ mod tests {
         q.encode_answer(&Context, "d", &Answer::indices("d", indices), None)
     }
 
+    /// Copies of one ability stacked up say which copy each is.
+    #[test]
+    fn stacked_copies_of_an_ability_are_numbered() {
+        let copy = |copy_index| Ability {
+            description_type: 2,
+            name: 2,
+            association: 7,
+            arguments: vec![LogArgument::Number(2)],
+            optional: false,
+            copy_index,
+            copy_total: 2,
+        };
+        let q = leaf(
+            7,
+            QuestionKind::Choice {
+                min: 1,
+                max: 1,
+                elements: QuestionElements::Abilities(vec![copy(1), copy(2)]),
+                decline: -1,
+                defaults: vec![],
+                affected: vec![],
+            },
+        );
+        let d = q.project(&Context, "d", None).unwrap();
+        let labels: Vec<_> = d.options.iter().map(|o| o.label.as_str()).collect();
+        assert_eq!(
+            labels,
+            ["Copper: Draw 2 cards (1/2)", "Copper: Draw 2 cards (2/2)"]
+        );
+    }
+
     /// "You may resolve an effect" as dominion.games asks it (Peasant's exchange,
     /// Falconer, Way of the Seal, ...): the abilities, a REJECT_ABILITY number its
     /// client never shows, and a choice of no cards.
@@ -2078,6 +2172,49 @@ mod tests {
         assert_eq!(answer(&q, vec![0, 2]).unwrap(), [1, 0, 1, 0]);
         assert_eq!(answer(&q, vec![0]).unwrap(), [1, 0, 0]);
         assert_eq!(answer(&q, vec![0, 3]).unwrap(), [1, 0, 0]);
+    }
+
+    /// A Way names the cards it can play, from the question's affected cards, and not
+    /// the other alternatives' options.
+    #[test]
+    fn a_way_names_only_the_cards_it_affects() {
+        let way = leaf(
+            WAY,
+            QuestionKind::Choice {
+                min: 0,
+                max: 1,
+                elements: QuestionElements::Cards(vec![11]),
+                decline: -1,
+                defaults: vec![],
+                affected: vec![9],
+            },
+        );
+        let coffers = leaf(
+            10,
+            QuestionKind::Choice {
+                min: 0,
+                max: 1,
+                elements: QuestionElements::Buttons(vec![6]),
+                decline: -1,
+                defaults: vec![],
+                affected: vec![],
+            },
+        );
+        let q = complex(
+            18,
+            vec![complex(19, vec![cards(0, vec![9, 7], 0), way]), coffers],
+        );
+        let d = q.project(&Context, "d", None).unwrap();
+        assert!(
+            d.groups[1].prompt.ends_with("from option 0 (Village)"),
+            "{}",
+            d.groups[1].prompt
+        );
+        let e = answer(&q, vec![3]).unwrap_err().to_string();
+        assert!(
+            e.contains("from option 0 (Village) in the same answer"),
+            "{e}"
+        );
     }
 
     /// The Buy phase: buy, or play Treasures (beside a choice of none), or autoplay them.

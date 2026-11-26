@@ -470,6 +470,7 @@ button.dt-bar-rating:hover { border-color: #f0cf7a; background: rgba(240, 207, 1
 .dt-ability-mini { opacity: 0.55; }
 .dt-ability-mini .dt-c { width: 100%; }
 .dt-ability-name { position: absolute; left: 0; right: 0; top: 0; padding: calc(0.3 * var(--vh)) calc(1 * var(--vh)); background: rgba(0, 0, 0, 0.5); font-size: calc(2 * var(--vh)); text-align: left; white-space: nowrap; overflow: hidden; text-shadow: 1px 1px 0 #000; }
+.dt-ability-detail { position: absolute; left: 0; right: 0; bottom: 0; padding: calc(0.3 * var(--vh)) calc(1 * var(--vh)); background: rgba(0, 0, 0, 0.5); font-size: calc(2 * var(--vh)); text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 1px 1px 0 #000; }
 .dt-slider { position: absolute; display: flex; gap: calc(1 * var(--vh)); align-items: center; padding: 0 calc(1 * var(--vh)); background: rgba(0, 0, 0, 0.8); z-index: 14000; box-sizing: border-box; }
 .dt-slider input { flex: 1; }
 .dt-slider .dt-slider-go { position: static; height: 80%; min-width: 30%; }

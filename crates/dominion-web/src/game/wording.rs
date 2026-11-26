@@ -478,6 +478,23 @@ pub fn done_count(d: &AgentDecision, picked: usize) -> Option<String> {
     })
 }
 
+/// What an ability's label says beyond its card's name, which its button shows under the
+/// name: "Village" for "Way of the Turtle (Village)", the label whole when it doesn't
+/// start with the name ("P2's Swamp Hag").
+pub fn ability_detail<'a>(card: &str, label: &'a str) -> Option<&'a str> {
+    let rest = match label.strip_prefix(card) {
+        Some(rest) if rest.is_empty() || rest.starts_with([' ', ':']) => {
+            rest.trim_start_matches(':').trim()
+        }
+        _ => label.trim(),
+    };
+    let rest = match rest.strip_prefix('(') {
+        Some(inner) if inner.ends_with(')') && !inner.contains('(') => &inner[..inner.len() - 1],
+        _ => rest,
+    };
+    (!rest.is_empty()).then_some(rest)
+}
+
 /// dominion.games' name and icon for a button whose own label says something else: its
 /// card modes for a card's yes-or-no questions.
 pub fn choice_button(d: &AgentDecision, label: &str) -> Option<(&'static str, &'static str)> {
@@ -832,6 +849,25 @@ mod tests {
         assert_eq!(
             done_with_none(&decision("cards", "trash", 1, 4, None)),
             None
+        );
+    }
+
+    #[test]
+    fn an_abilitys_detail_is_what_its_label_adds_to_its_card() {
+        let detail = |label| ability_detail("Way of the Turtle", label);
+        assert_eq!(detail("Way of the Turtle (Village)"), Some("Village"));
+        assert_eq!(detail("Way of the Turtle"), None);
+        assert_eq!(
+            detail("Way of the Turtle (Village) [at the start of your turn]"),
+            Some("(Village) [at the start of your turn]")
+        );
+        assert_eq!(
+            ability_detail("Swamp Hag", "P2's Swamp Hag: gain a Curse"),
+            Some("P2's Swamp Hag: gain a Curse")
+        );
+        assert_eq!(
+            ability_detail("Fair", "Fair: +1 Buy (optional)"),
+            Some("+1 Buy (optional)")
         );
     }
 }
