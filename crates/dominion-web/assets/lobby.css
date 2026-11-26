@@ -1238,10 +1238,10 @@ a.lb-h2h-name:hover { text-decoration: underline; }
   padding: 1vh 1.4vh;
   border-left: .3vh solid transparent;
   border-bottom: 1px solid rgba(255, 255, 255, .08);
-.lb-history-entry:focus-visible { outline: 2px solid var(--gold); outline-offset: -2px; }
   cursor: pointer;
 }
 .lb-history-entry:hover { background: rgba(255, 255, 255, .06); }
+.lb-history-entry:focus-visible { outline: 2px solid var(--gold); outline-offset: -2px; }
 .lb-history-entry.on { background: rgba(255, 255, 255, .1); border-left-color: var(--gold); }
 .lb-history-entry[data-voided] > * { opacity: .45; }
 .lb-history-entry[data-voided]:hover > *, .lb-history-entry[data-voided].on > * { opacity: .7; }
@@ -1270,11 +1270,11 @@ a.lb-h2h-name:hover { text-decoration: underline; }
 .lb-seat { display: inline-flex; align-items: center; gap: .7vh; min-width: 0; }
 .lb-seat.right { flex-direction: row-reverse; }
 .lb-seat-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.15; }
-.lb-seat-link { color: inherit; text-decoration: none; }
-.lb-seat-link:hover { text-decoration: underline; }
 .lb-seat.right .lb-seat-text { align-items: flex-end; text-align: right; }
 .lb-seat-name { font-weight: 500; color: var(--text); overflow: hidden; text-overflow: ellipsis; }
 .lb-seat.won .lb-seat-name { font-weight: 700; color: #fff; }
+.lb-seat-link { color: inherit; text-decoration: none; }
+.lb-seat-link:hover { text-decoration: underline; }
 .lb-seat-mark {
   flex-shrink: 0;
   width: 2vh;
