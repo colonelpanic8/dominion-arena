@@ -208,8 +208,12 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
                           `Models` (in `GameCtx`) keeps the game's such seats and tells the
                           state who answers the seat shown (`state::Hold`); `Aside` puts
                           `ModelPane` (notes, asking, handing over) in a tab beside the
-                          chat; `HeldNotice`; `ModelControls`, the window for models' own seats
+                          chat, and the agents' transcript in another (`transcript::
+                          AgentsPane`, full screen in a dialog); `HeldNotice`;
+                          `ModelControls`, the window for models' own seats
   src/game/menu.rs        the game menu (Resign, Lobby) and the question before resigning
+  src/transcript.rs       agents' transcripts: `use_feed` (loaded, then followed), the pane
+                          beside the chat, the dialog over the game, `/game/<id>/agents`
   src/game/undo.rs        the undo request waiting: withdraw yours, allow or refuse another's
   src/game/replay.rs      `/game/<id>/replay`: a finished game on the table at any answer, stepped
                           or played through, as everyone or one seat saw it

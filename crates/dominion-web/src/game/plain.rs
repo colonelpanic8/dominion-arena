@@ -123,7 +123,7 @@ pub fn PlainGame() -> Element {
                     }
                 }
                 LogPanel { entries: log }
-                if ctx.offers.read().chat {
+                if ctx.offers.read().chat || ctx.offers.read().transcript.is_some() {
                     section { class: "panel chat-panel",
                         super::model::Aside { heading: true }
                     }

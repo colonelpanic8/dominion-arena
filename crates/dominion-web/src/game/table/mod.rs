@@ -527,7 +527,7 @@ window.__dtViewport();
 const KEYS_JS: &str = r#"
 if (window.__dtKeys) document.removeEventListener('keydown', window.__dtKeys);
 window.__dtKeys = (e) => {
-  if (document.querySelector("dialog.model-controls[open]")) return;
+  if (document.querySelector("dialog.model-controls[open], dialog.transcript-full[open]")) return;
   const t = e.target;
   const typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT');
   if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && (e.key === 'z' || e.key === 'Z')) {

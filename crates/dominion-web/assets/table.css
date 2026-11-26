@@ -622,6 +622,10 @@ button.dt-bar-rating:hover { border-color: #f0cf7a; background: rgba(240, 207, 1
 .dt-root .model-note[data-fresh="old"], .dt-root .model-note-none, .dt-root .model-about, .dt-root .model-note-when { color: #aaa; }
 .dt-root .model-pane button { font-size: calc(1.7 * var(--vh)); }
 .dt-root .model-pane select { font: inherit; font-size: calc(1.6 * var(--vh)); padding: calc(0.3 * var(--vh)) calc(0.5 * var(--vh)); background: rgba(0, 0, 0, 0.6); color: #fff; border: calc(0.15 * var(--vh)) solid #888; border-radius: calc(0.4 * var(--vh)); }
+.dt-root .transcript-pane { flex: 1; font-size: calc(1.6 * var(--vh)); line-height: 1.3; color: #e8e8e8; }
+.dt-root .transcript-pane-scroll { flex: 1; min-height: 0; max-height: none; }
+.dt-root .transcript-pane-bar button { font-size: calc(1.5 * var(--vh)); }
+.dt-root .transcript-pane-bar select { font: inherit; padding: calc(0.3 * var(--vh)) calc(0.5 * var(--vh)); background: rgba(0, 0, 0, 0.6); color: #fff; border: calc(0.15 * var(--vh)) solid #888; border-radius: calc(0.4 * var(--vh)); }
 .dt-root .resign-ask { font-family: var(--ui); border-width: calc(0.2 * var(--vh)); border-radius: calc(1 * var(--vh)); padding: calc(2 * var(--vh)) calc(3 * var(--vh)); }
 .dt-root .resign-ask p { font-size: calc(3.2 * var(--vh)); margin: 0 0 calc(1.5 * var(--vh)); }
 .dt-root .resign-buttons button { background: #000; color: #fff; border: calc(0.25 * var(--vh)) solid #fff; border-radius: 0; font-family: var(--ui); font-weight: 700; font-size: calc(2.6 * var(--vh)); padding: 0 0.5em; cursor: pointer; }

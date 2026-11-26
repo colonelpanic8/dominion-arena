@@ -107,7 +107,7 @@ button.copper, .button.copper {
 button.small { padding: .1em .5em; font-size: .85em; }
 
 /* Ovals: choices that stay chosen (views, seats, sizes). */
-button.toggle:not(:is(.dt-root, .lb-page) *), .dt-controls button.toggle, .aside-tabs button.toggle {
+button.toggle:not(:is(.dt-root, .lb-page) *), .dt-controls button.toggle, .aside-tabs button.toggle, .transcript-pane-bar button.toggle, .transcript-full button.toggle {
   padding: .4em 1em;
   border: 2px solid #453f34;
   border-radius: 2em;
@@ -116,12 +116,12 @@ button.toggle:not(:is(.dt-root, .lb-page) *), .dt-controls button.toggle, .aside
   text-shadow: none;
   box-shadow: 0 0 0 2px #1a1715;
 }
-button.toggle:not(:is(.dt-root, .lb-page) *):not(:disabled):hover, .dt-controls button.toggle:not(:disabled):hover, .aside-tabs button.toggle:not(:disabled):hover {
+button.toggle:not(:is(.dt-root, .lb-page) *):not(:disabled):hover, .dt-controls button.toggle:not(:disabled):hover, .aside-tabs button.toggle:not(:disabled):hover, .transcript-pane-bar button.toggle:not(:disabled):hover, .transcript-full button.toggle:not(:disabled):hover {
   color: #fff;
   border-color: var(--copper);
   box-shadow: 0 0 0 2px #241a19, 0 0 .3em var(--ember) inset;
 }
-button.toggle.on:not(:is(.dt-root, .lb-page) *), .dt-controls button.toggle.on, .aside-tabs button.toggle.on {
+button.toggle.on:not(:is(.dt-root, .lb-page) *), .dt-controls button.toggle.on, .aside-tabs button.toggle.on, .transcript-full button.toggle.on {
   color: #fff;
   background: #564f48;
   border-color: var(--copper);

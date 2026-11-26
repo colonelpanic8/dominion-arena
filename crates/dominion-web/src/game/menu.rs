@@ -12,7 +12,6 @@ pub fn GameMenu() -> Element {
     let mut resigning = ctx.resigning;
     let running = (ctx.state.read().view.as_ref()).is_some_and(|v| v.game.running);
     let can_resign = running && ctx.seat.read().is_some();
-    let transcript = ctx.offers.read().transcript.clone();
     rsx! {
         span { class: "game-menu right",
             if open() {
@@ -27,9 +26,6 @@ pub fn GameMenu() -> Element {
                         },
                         "Resign"
                     }
-                }
-                if let Some(id) = transcript {
-                    a {class:"button",href:Route::Transcript {id}.to_string(),target:"_blank",rel:"noopener","Agent transcript"}
                 }
                 Link { class: "button", to: Route::Lobby {}, "data-action": "lobby", "Lobby" }
             }
