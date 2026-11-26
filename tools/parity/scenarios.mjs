@@ -465,4 +465,149 @@ export const SCENARIOS = [
     },
     steps: ['villages', (d) => d.until(bigHand, ['Lost City', 'Council Room', 'Gold', 'Silver']), 'act'],
   },
+
+  // Table shapes, turn states, game ends and windows (parity round 3).
+  {
+    name: 'viewport-4x3',
+    about: 'a 1280×1024 window: a squarer table, the Buy phase',
+    viewport: '1280x1024',
+    spec: { kingdom: ['Village', 'Smithy', 'Market', 'Moat', 'Militia', 'Cellar', 'Festival', 'Laboratory', 'Workshop', 'Remodel'] },
+    steps: ['turns 6 Gold, Silver', 'until Alice Gold+Silver: Gold, Silver', 'treasures'],
+  },
+  {
+    name: 'viewport-ultrawide',
+    about: 'a 3440×1440 window: the widest table, the Buy phase',
+    viewport: '3440x1440',
+    spec: { kingdom: ['Village', 'Smithy', 'Market', 'Moat', 'Militia', 'Cellar', 'Festival', 'Laboratory', 'Workshop', 'Remodel'] },
+    steps: ['turns 6 Gold, Silver', 'until Alice Gold+Silver: Gold, Silver', 'treasures'],
+  },
+  {
+    name: 'viewport-720',
+    about: 'a 1280×720 window: the smallest table, a few turns in',
+    viewport: '1280x720',
+    spec: { kingdom: ['Village', 'Smithy', 'Market', 'Moat', 'Militia', 'Cellar', 'Festival', 'Laboratory', 'Workshop', 'Remodel'] },
+    steps: ['turns 10 Gold, Laboratory, Market, Silver', 'act'],
+  },
+  {
+    name: 'long-names',
+    about: 'three players with the longest names, two sharing their initials',
+    players: 3,
+    names: ['Maximilian Wolfgang', 'Maximiliana Wolfe-X', 'Qi'],
+    spec: { kingdom: ['Village', 'Smithy', 'Market', 'Moat', 'Militia', 'Cellar', 'Festival', 'Laboratory', 'Workshop', 'Remodel'] },
+    steps: ['turns 6 Gold, Laboratory, Silver', 'act'],
+  },
+  {
+    name: 'cleanup',
+    about: "a Clean-up decision: Alchemist going back on the deck",
+    spec: { kingdom: ['Alchemist', 'Village', 'Smithy', 'Market', 'Moat', 'Militia', 'Cellar', 'Festival', 'Laboratory', 'Workshop'] },
+    steps: ['turns 4 Alchemist, Potion, Silver', 'until Alice Alchemist+Potion: Alchemist, Potion, Silver', 'play Alchemist', 'end', 'treasures', 'end'],
+  },
+  {
+    name: 'outpost-turn',
+    about: "an extra turn: Alice's Outpost turn",
+    spec: { kingdom: ['Outpost', 'Village', 'Smithy', 'Market', 'Moat', 'Militia', 'Cellar', 'Festival', 'Laboratory', 'Workshop'] },
+    steps: ['turns 4 Outpost, Silver', 'until Alice Outpost: Outpost, Silver', 'play Outpost', 'treasures', 'end', 'act'],
+  },
+  {
+    name: 'villagers',
+    about: 'no Actions left, Villagers to spend, an Action in hand',
+    spec: { kingdom: ['Recruiter', 'Smithy', 'Baker', 'Village', 'Market', 'Moat', 'Militia', 'Cellar', 'Festival', 'Laboratory'] },
+    steps: [
+      'turns 8 Recruiter, Smithy, Silver',
+      (d) => d.until((x) => x.name === 'Alice' && x.view.you.tokens?.villagers > 0, ['Recruiter', 'Smithy', 'Silver']),
+      'until Alice Smithy+Smithy: Recruiter, Smithy, Silver',
+      'play Smithy',
+    ],
+  },
+  {
+    name: 'coffers-spent',
+    about: 'Coffers spent in the Buy phase: $ raised, the Coffers count down',
+    spec: { kingdom: ['Baker', 'Candlestick Maker', 'Village', 'Smithy', 'Market', 'Moat', 'Militia', 'Cellar', 'Festival', 'Laboratory'] },
+    steps: ['turns 8 Baker, Silver', 'act', 'pick Spend a Coffers'],
+  },
+  {
+    name: 'debt-owed',
+    about: 'Debt owed in the Buy phase: buying blocked until it is paid',
+    spec: { kingdom: ['Engineer', 'City Quarter', 'Village', 'Smithy', 'Market', 'Moat', 'Militia', 'Cellar', 'Festival', 'Laboratory'] },
+    steps: ['turns 2 Silver', 'turn Engineer', 'turn Silver', 'act'],
+  },
+  {
+    name: 'debt-paid',
+    about: 'Debt being paid off with $',
+    spec: { kingdom: ['Engineer', 'City Quarter', 'Village', 'Smithy', 'Market', 'Moat', 'Militia', 'Cellar', 'Festival', 'Laboratory'] },
+    steps: ['turns 2 Silver', 'turn Engineer', 'turn Silver', 'act', 'pick Pay off', 'pick Pay off'],
+  },
+  {
+    name: 'provinces-end',
+    about: 'the end of a three-player game: Alice buys the last Province',
+    players: 3,
+    spec: { kingdom: ['Village', 'Smithy', 'Market', 'Moat', 'Militia', 'Cellar', 'Festival', 'Laboratory', 'Workshop', 'Remodel'] },
+    steps: [lastOne('Province', 8, ['Gold', 'Laboratory', 'Silver'])],
+    after: ['buy Province'],
+  },
+  {
+    name: 'colonies-end',
+    about: 'the end of the game: Alice buys the last Colony',
+    spec: { kingdom: ['Village', 'Smithy', 'Market', 'Moat', 'Militia', 'Cellar', 'Festival', 'Laboratory', 'Workshop', 'Remodel'], colonies: true },
+    steps: [lastOne('Colony', 11, ['Platinum', 'Gold', 'Laboratory', 'Silver'])],
+    after: ['buy Colony'],
+  },
+  {
+    name: 'resigned',
+    about: 'the end of the game after Bob resigned',
+    spec: { kingdom: ['Village', 'Smithy', 'Market', 'Moat', 'Militia', 'Cellar', 'Festival', 'Laboratory', 'Workshop', 'Remodel'] },
+    steps: ['turns 6 Gold, Laboratory, Silver'],
+    after: ['resign Bob'],
+  },
+  {
+    name: 'tie',
+    about: 'the end of a tie: equal points and turns',
+    // Every turn buys one card costing $0 until Curses, Ruins and Coppers are gone: 66
+    // turns, Bob's last.
+    spec: { kingdom: ['Marauder', 'Village', 'Smithy', 'Market', 'Moat', 'Militia', 'Cellar', 'Festival', 'Laboratory', 'Workshop'] },
+    steps: ['turns 40 Curse, Abandoned Mine, Ruined Library, Ruined Market, Ruined Village, Survivors, Copper'],
+    after: ['turns 40 Curse, Abandoned Mine, Ruined Library, Ruined Market, Ruined Village, Survivors, Copper'],
+  },
+  {
+    name: 'study',
+    about: 'the study view: a Kingdom card right-clicked',
+    spec: { kingdom: ['Village', 'Smithy', 'Market', 'Moat', 'Militia', 'Cellar', 'Festival', 'Laboratory', 'Workshop', 'Remodel'] },
+    steps: ['turns 4 Silver', 'act'],
+    show: [{ study: 'Laboratory' }],
+  },
+  {
+    name: 'trash-window',
+    about: 'the trash with cards in it, its window open',
+    spec: { kingdom: ['Cellar', 'Chapel', 'Workshop', 'Remodel', 'Pawn', 'Courtier', 'Sentry', 'Moat', 'Militia', 'Village'] },
+    steps: ['turns 4 Chapel, Silver', 'until Alice Chapel: Silver', 'prefer Estate, Copper', 'play Chapel', 'act'],
+    show: [{ tab: 'Trash' }],
+  },
+  {
+    name: 'mat-window',
+    about: "a mat's window: Native Village's",
+    spec: { kingdom: ['Native Village', 'Island', 'Village', 'Smithy', 'Market', 'Moat', 'Militia', 'Cellar', 'Festival', 'Laboratory'] },
+    steps: ['turns 12 Native Village, Island, Gold, Silver', 'act'],
+    show: [{ at: '[data-anchor="zone:0:nativeVillage"]' }],
+  },
+  {
+    name: 'picked-cards',
+    about: 'cards picked while choosing: two of four for Chapel',
+    spec: { kingdom: ['Cellar', 'Chapel', 'Workshop', 'Remodel', 'Pawn', 'Courtier', 'Sentry', 'Moat', 'Militia', 'Village'] },
+    steps: ['turns 4 Remodel, Chapel', 'until Alice Chapel', 'play Chapel'],
+    show: [{ click: 'Estate', hand: true }, { click: 'Copper', hand: true }],
+  },
 ];
+
+// Plays until one `card` is left and Alice, in her Buy phase with her Treasures played,
+// has $`price` for it.
+function lastOne(card, price, buys) {
+  const left = (d) => d.view.supply.find((p) => p.card === card)?.count;
+  return async (driver) => {
+    const treasures = (d) => d.decision.options.some((o) => o.action === 'play' && driver.is(o.card, 'Treasure'));
+    await driver.until((d) => d.name === 'Alice' && left(d) <= 1, [card, ...buys], { spree: true });
+    await driver.until(
+      (d) => d.name === 'Alice' && d.decision.phase === 'buy' && !treasures(d) && d.view.turn.coins >= price,
+      buys,
+    );
+  };
+}
