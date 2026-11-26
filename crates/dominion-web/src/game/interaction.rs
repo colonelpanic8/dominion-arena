@@ -351,6 +351,10 @@ pub fn tone(d: &AgentDecision, t: &Target) -> &'static str {
         "buy" | "buy-landscape" => return "buy",
         _ => {}
     }
+    if d.ordered {
+        // Cards to put in order: dominion.games marks only their places.
+        return "";
+    }
     match d.purpose.as_str() {
         "trash" => "trash",
         "exile" => "exile",
@@ -359,6 +363,8 @@ pub fn tone(d: &AgentDecision, t: &Target) -> &'static str {
         "pass" => "pass",
         "name" => "name",
         "play" | "gain" | "turn" => "play",
+        // A pile for a token: dominion.games marks it only with its plus.
+        "other" if t.place == Place::Supply => "",
         _ => "discard",
     }
 }

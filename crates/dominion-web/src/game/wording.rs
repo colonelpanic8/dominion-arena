@@ -129,14 +129,28 @@ fn purpose_suffixes(purpose: &str) -> &'static [&'static str] {
         "pass" => &["PASS"],
         "overpay" => &["OVERPAY"],
         "number" => &["INSERT"],
+        // Moving a token onto a pile (Plan, Lost Arts, ...).
+        "other" => &["MOVE", "NEW"],
+        "move" => &["SHUFFLE"],
         _ => &[],
     }
+}
+
+/// What a prompt may name besides the decision: the players, by name.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Asking {
+    /// The player asked.
+    pub name: Option<String>,
+    /// Everyone else.
+    pub others: Vec<String>,
+    /// Coin tokens on the asked player's Pirate Ship mat.
+    pub pirate_ship: u32,
 }
 
 /// dominion.games' own prompt for the question its source card asks, in parts (an
 /// amount is a part of its own, as it draws it): the question named after the card
 /// alone, or after the card and the decision's purpose.
-pub fn question_prompt(d: &AgentDecision) -> Option<Vec<String>> {
+pub fn question_prompt(d: &AgentDecision, cards: &CardDb, asking: &Asking) -> Option<Vec<String>> {
     if d.kind == "turn" || matches!(d.purpose.as_str(), "way" | "trigger" | "reaction") {
         return None;
     }
@@ -154,23 +168,64 @@ pub fn question_prompt(d: &AgentDecision) -> Option<Vec<String>> {
             .lines()
             .find_map(|l| l.split_once('\t').filter(|(k, _)| *k == id).map(|(_, t)| t))
     };
+    let (min, max) = bounds(d);
+    // Whose cards the question is about: the asked player's own, or another's.
+    let own = own_prompt(d).contains("your");
+    let whose = if own { "YOU" } else { "OTHER" };
+    // Torturer's choice is asked as its discard, with taking the Curse its other button.
+    let key = if source == "Torturer" && matches!(d.purpose.as_str(), "mode" | "either") {
+        "TORTURER_MAY_DISCARD".to_string()
+    } else {
+        key
+    };
     let text = find(&key).or_else(|| {
         purpose_suffixes(&d.purpose)
             .iter()
-            .find_map(|s| find(&format!("{key}_{s}")))
+            .flat_map(|s| {
+                [
+                    (min == 0).then(|| format!("{key}_MAY_{s}")),
+                    Some(format!("{key}_{s}")),
+                ]
+            })
+            .flatten()
+            .chain([format!("{key}_{whose}")])
+            .find_map(|id| find(&id))
     })?;
-    let (min, max) = bounds(d);
     let amount = d
         .options
         .iter()
         .filter_map(|o| o.cost.as_ref())
         .filter(|c| c.potions == 0 && c.debt == 0)
         .map(|c| c.coins)
-        .max();
+        .max()
+        .or((source == "Pirate Ship").then_some(asking.pirate_ship));
+    let player = |name: &str| {
+        asking
+            .others
+            .iter()
+            .any(|o| o == name)
+            .then(|| name.to_string())
+    };
+    // Another player a question names: "... to Bob", "Bob's Copper", else the only one.
+    let other = || {
+        let prompt = own_prompt(d);
+        prompt
+            .rsplit_once(" to ")
+            .and_then(|(_, n)| player(n))
+            .or_else(|| {
+                prompt
+                    .split_whitespace()
+                    .find_map(|w| w.strip_suffix("'s").and_then(player))
+            })
+            .or_else(|| match asking.others.as_slice() {
+                [only] => Some(only.clone()),
+                _ => None,
+            })
+    };
     let mut parts = vec![String::new()];
     let mut rest = text;
     loop {
-        let next = ["AMOUNT0", "NUMBER0", "PLAYER0"]
+        let next = ["AMOUNT0", "NUMBER0", "PLAYER0", "PLAYER1", "CARDS0"]
             .into_iter()
             .filter_map(|p| rest.find(p).map(|i| (i, p)))
             .min();
@@ -183,8 +238,10 @@ pub fn question_prompt(d: &AgentDecision) -> Option<Vec<String>> {
         parts.push(match p {
             "AMOUNT0" => format!("{} Coins", amount?),
             "NUMBER0" if min == max => min.to_string(),
-            // The player the question names, as its own words name them.
-            "PLAYER0" => own_prompt(d).rsplit_once(" to ")?.1.to_string(),
+            "PLAYER0" => other()?,
+            "PLAYER1" if own => asking.name.clone()?,
+            "PLAYER1" => other()?,
+            "CARDS0" => with_article(&subject_card(d, cards)?),
             _ => return None,
         });
         parts.push(String::new());
@@ -204,27 +261,44 @@ pub fn question_prompt(d: &AgentDecision) -> Option<Vec<String>> {
 
 /// The prompt dominion.games shows for a decision.
 pub fn prompt(d: &AgentDecision, cards: &CardDb) -> String {
-    prompt_parts(d, cards).join(" ")
+    prompt_parts(d, cards, &Asking::default()).join(" ")
 }
 
 /// [`prompt`] in the parts dominion.games draws apart (an amount of coins).
-pub fn prompt_parts(d: &AgentDecision, cards: &CardDb) -> Vec<String> {
+pub fn prompt_parts(d: &AgentDecision, cards: &CardDb, asking: &Asking) -> Vec<String> {
     if is_sinister_plot(d) {
         return vec![own_prompt(d).into()];
     }
     if is_way(d, cards) {
         let card = d.source.as_deref().unwrap_or("it");
-        let article = if card.starts_with(['A', 'E', 'I', 'O', 'U']) {
-            "an"
-        } else {
-            "a"
-        };
-        return vec![
-            "Consider the Way you play".into(),
-            format!("{article} {card}"),
-        ];
+        return vec!["Consider the Way you play".into(), with_article(card)];
     }
-    question_prompt(d).unwrap_or_else(|| vec![generic_prompt(d, cards)])
+    question_prompt(d, cards, asking).unwrap_or_else(|| vec![generic_prompt(d, cards)])
+}
+
+/// The one card a question is about: the card all its options name, else the card an
+/// option's label ends with ("Set aside Vassal").
+fn subject_card(d: &AgentDecision, cards: &CardDb) -> Option<String> {
+    let mut named = d.options.iter().filter_map(|o| o.card.as_deref());
+    if let Some(first) = named.next() {
+        return named.all(|c| c == first).then(|| first.to_string());
+    }
+    d.options.iter().find_map(|o| {
+        let words: Vec<&str> = o.label.split(' ').collect();
+        (1..words.len())
+            .map(|i| words[i..].join(" "))
+            .find(|tail| cards.get(tail).is_some())
+    })
+}
+
+/// "a Vassal", "an Estate".
+fn with_article(card: &str) -> String {
+    let article = if card.starts_with(['A', 'E', 'I', 'O', 'U']) {
+        "an"
+    } else {
+        "a"
+    };
+    format!("{article} {card}")
 }
 
 fn generic_prompt(d: &AgentDecision, cards: &CardDb) -> String {
@@ -283,16 +357,11 @@ fn generic_prompt(d: &AgentDecision, cards: &CardDb) -> String {
             }
         }
         (_, "reaction") => "Do you want to react?".into(),
-        (_, "trigger") => {
-            // dominion.games asks every optional ability as a reaction, Reaction or not
-            // (Alchemist's at the start of Clean-up).
-            let optional = may || d.options.iter().any(|o| o.action == "no");
-            if optional {
-                "Do you want to react?".into()
-            } else {
-                "Resolve an effect".into()
-            }
+        // dominion.games asks every optional ability as a reaction.
+        (_, "trigger") if may || d.options.iter().any(|o| o.action == "no") => {
+            "Do you want to react?".into()
         }
+        (_, "trigger") => "Resolve an effect".into(),
         (_, "mode") | (_, "either") => {
             if min == max {
                 format!("Choose {}", number_word(min))
@@ -408,6 +477,28 @@ pub fn done_count(d: &AgentDecision, picked: usize) -> Option<String> {
     })
 }
 
+/// dominion.games' name and icon for a button whose own label says something else: its
+/// card modes for a card's yes-or-no questions.
+pub fn choice_button(d: &AgentDecision, label: &str) -> Option<(&'static str, &'static str)> {
+    Some(match (d.source.as_deref()?, label) {
+        ("Library", l) if l.starts_with("Set aside ") => ("Skip", "refuse"),
+        ("Library", "Keep it") => ("Keep", "put-in-hand"),
+        ("Navigator", "Discard them all") => ("Discard All", "refuse"),
+        ("Oracle" | "Scrying Pool", l) if l.starts_with("Discard ") => ("Discard", "discard-icon"),
+        ("Oracle" | "Scrying Pool", l) if l.starts_with("Put ") => ("Topdeck", "topdeck-icon"),
+        _ => return None,
+    })
+}
+
+/// The option of a yes-or-no question about cards looked at that dominion.games answers
+/// by a click on those cards rather than a button of its own.
+pub fn answered_by_cards(d: &AgentDecision) -> Option<&'static str> {
+    match d.source.as_deref()? {
+        "Navigator" => Some("Put them back in any order"),
+        _ => None,
+    }
+}
+
 /// The button answering a one-pick decision with nothing.
 pub fn decline(d: &AgentDecision) -> &'static str {
     let source = d.source.as_deref().unwrap_or_default();
@@ -428,6 +519,7 @@ pub fn decline(d: &AgentDecision) -> &'static str {
         "set-aside" => "Don't Set Aside",
         "overpay" => "Don't Overpay",
         "reaction" | "trigger" => "Continue",
+        "move" if source == "Inn" => "Don't",
         _ => "No thanks",
     }
 }
@@ -516,6 +608,9 @@ mod tests {
                 "Throne Room",
                 "You may play an Action card from your hand twice.",
             ),
+            card("Vassal", "+$2\nDiscard the top card of your deck."),
+            card("Estate", "1 VP"),
+            card("Copper", "$1"),
         ])
     }
 
@@ -560,7 +655,12 @@ mod tests {
     #[test]
     fn card_questions_read_as_dominion_games_words_them() {
         let cards = db();
-        let p = |d: AgentDecision| prompt_parts(&d, &cards);
+        let asking = Asking {
+            name: Some("Alice".into()),
+            others: vec!["Bob".into()],
+            pirate_ship: 2,
+        };
+        let p = |d: AgentDecision| prompt_parts(&d, &cards, &asking);
         assert_eq!(
             p(decision("choose", "mode", 2, 2, Some("Pawn"))),
             ["Choose how to play Pawn"]
@@ -602,6 +702,72 @@ mod tests {
         assert_eq!(
             p(decision("choose", "reaction", 0, 1, None)),
             ["Do you want to react?"]
+        );
+    }
+
+    fn option(index: u32, label: &str, card: Option<&str>) -> dominion_protocol::AgentOption {
+        dominion_protocol::AgentOption {
+            index,
+            group: 0,
+            action: "select".into(),
+            label: label.into(),
+            card: card.map(Into::into),
+            zone: None,
+            cost: None,
+            value: None,
+            player: None,
+        }
+    }
+
+    #[test]
+    fn questions_name_the_card_they_are_about() {
+        let cards = db();
+        let mut library = decision("choose", "set-aside", 1, 1, Some("Library"));
+        library.options = vec![
+            option(0, "Set aside Vassal", None),
+            option(1, "Keep it", None),
+        ];
+        let asking = Asking {
+            name: Some("Alice".into()),
+            others: vec!["Bob".into()],
+            pirate_ship: 2,
+        };
+        let p = |d: &AgentDecision| prompt_parts(d, &cards, &asking);
+        assert_eq!(p(&library), ["You may skip", "a Vassal"]);
+        assert_eq!(
+            choice_button(&library, "Set aside Vassal"),
+            Some(("Skip", "refuse"))
+        );
+        let mut diver = decision("cards", "top-deck", 0, 1, Some("Pearl Diver"));
+        diver.options = vec![option(0, "Estate", Some("Estate"))];
+        assert_eq!(p(&diver), ["Put", "an Estate", "on top or bottom"]);
+        // Moving a token onto a pile.
+        let plan = decision("pile", "other", 1, 1, Some("Plan"));
+        assert_eq!(p(&plan), ["Move Trashing token"]);
+        // The asked player's own cards, or another's.
+        let mut pool = decision("choose", "discard", 1, 1, Some("Scrying Pool"));
+        pool.prompt = "Scrying Pool: discard your Copper?".into();
+        pool.options = vec![
+            option(0, "Discard your Copper", None),
+            option(1, "Put it back", None),
+        ];
+        assert_eq!(p(&pool), ["You: keep or discard", "a Copper"]);
+        pool.prompt = "Scrying Pool: discard Bob's Copper?".into();
+        pool.options[0].label = "Discard Bob's Copper".into();
+        assert_eq!(p(&pool), ["Bob", ": keep or discard", "a Copper", "."]);
+        let mut oracle = decision("choose", "discard", 1, 1, Some("Oracle"));
+        oracle.prompt = "Oracle: discard your Copper, Oracle?".into();
+        assert_eq!(p(&oracle), ["Make", "Alice", "discard?"]);
+        let mut swindler = decision("pile", "gain", 1, 1, Some("Swindler"));
+        swindler.prompt = "Swindler: choose a pile to gain from".into();
+        assert_eq!(p(&swindler), ["Choose a card for", "Bob"]);
+        assert_eq!(
+            p(&decision("choose", "mode", 1, 1, Some("Pirate Ship"))),
+            ["+", "2 Coins", "or attack"]
+        );
+        assert_eq!(
+            p(&decision("cards", "set-aside", 0, 1, Some("Prince"))),
+            ["You may set a card aside"]
         );
     }
 

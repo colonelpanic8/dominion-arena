@@ -340,6 +340,14 @@ impl Selection {
     }
 }
 
+/// For a decision ordering all its cards, the order they are offered in: dominion.games
+/// lets that be confirmed as it stands.
+pub fn default_order(d: &AgentDecision) -> Option<Vec<u32>> {
+    let (min, max) = bounds(d);
+    (d.ordered && min == max && max as usize == d.options.len())
+        .then(|| d.options.iter().map(|o| o.index).collect())
+}
+
 /// The answer naming `input`, for a decision that takes any card's name.
 pub fn name_answer(d: &AgentDecision, cards: &CardDb, input: &str) -> Option<Answer> {
     if !d.name_any {

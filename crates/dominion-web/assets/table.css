@@ -450,7 +450,7 @@ button.dt-bar-rating:hover { border-color: #f0cf7a; background: rgba(240, 207, 1
   z-index: 14000;
 }
 .dt-btn:hover:not(:disabled) { background: rgba(0, 0, 0, 0.95); }
-.dt-btn:disabled { color: #666; border-color: #666; cursor: default; }
+.dt-btn:disabled { opacity: 1; color: #777; border-color: transparent; cursor: default; }
 .dt-btn.dt-on { background: #fff; color: #000; }
 .dt-btn-label { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; white-space: nowrap; }
 .dt-btn-line { line-height: 1.05; }
@@ -462,6 +462,8 @@ button.dt-bar-rating:hover { border-color: #f0cf7a; background: rgba(240, 207, 1
 .dt-undo { font-size: calc(2.2 * var(--vh)); }
 .dt-ability { padding: 0; overflow: hidden; border-radius: 0; }
 .dt-ability-art { position: absolute; inset: 0; background-size: 100% auto; background-position: center 15%; pointer-events: none; }
+.dt-ability-mini { opacity: 0.55; }
+.dt-ability-mini .dt-c { width: 100%; }
 .dt-ability-name { position: absolute; left: 0; right: 0; top: 0; padding: calc(0.3 * var(--vh)) calc(1 * var(--vh)); background: rgba(0, 0, 0, 0.5); font-size: calc(2 * var(--vh)); text-align: left; white-space: nowrap; overflow: hidden; text-shadow: 1px 1px 0 #000; }
 .dt-slider { position: absolute; display: flex; gap: calc(1 * var(--vh)); align-items: center; padding: 0 calc(1 * var(--vh)); background: rgba(0, 0, 0, 0.8); z-index: 14000; box-sizing: border-box; }
 .dt-slider input { flex: 1; }
@@ -477,6 +479,9 @@ button.dt-bar-rating:hover { border-color: #f0cf7a; background: rgba(240, 207, 1
   z-index: 13100;
 }
 .dt-window-title { position: absolute; left: 0; right: 0; top: calc(0.6 * var(--vh)); font-family: var(--title); font-size: calc(3.6 * var(--vh)); text-align: center; text-shadow: 2px 2px 0 #000; pointer-events: none; }
+.dt-window-end { position: absolute; bottom: calc(1.1 * var(--vh)); font-family: var(--title); font-size: calc(2.2 * var(--vh)); color: #fff; }
+.dt-window-bottom { left: calc(1.4 * var(--vh)); }
+.dt-window-top { right: calc(3 * var(--vh)); }
 .dt-window-empty { position: absolute; left: 0; right: 0; top: 45%; text-align: center; color: #aaa; }
 .dt-note { color: #ccc; font-size: calc(1.6 * var(--vh)); margin: 0; }
 .dt-window > .dt-note { position: absolute; left: calc(1 * var(--vh)); bottom: calc(0.5 * var(--vh)); }

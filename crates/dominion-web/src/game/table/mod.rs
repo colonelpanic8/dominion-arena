@@ -385,8 +385,13 @@ impl TableCtx {
         if self.busy() {
             return;
         }
-        if let Some(a) = self.edit_sel(&ui.decision.id).answer(&ui.decision) {
+        let sel = self.edit_sel(&ui.decision.id);
+        if let Some(a) = sel.answer(&ui.decision) {
             self.submit(a);
+        } else if let Some(order) =
+            super::state::default_order(&ui.decision).filter(|_| sel.picks().is_empty())
+        {
+            self.submit(Answer::indices(ui.decision.id.clone(), order));
         }
     }
 
@@ -802,6 +807,7 @@ pub fn TableGame(controls: Element) -> Element {
     let can_treasures = ui_now
         .as_ref()
         .is_some_and(|u| !u.inter.treasures.is_empty());
+    let looking = Rc::new(looked_at(&b, ui_now.as_deref()));
     rsx! {
         document::Style { "{CSS}" }
         style { "{extra_css}" }
@@ -850,8 +856,9 @@ pub fn TableGame(controls: Element) -> Element {
                 sel: sel.clone(),
                 busy: answering,
                 can_treasures,
+                looking: !looking.is_empty(),
             }
-            prompt::DecisionWindow { g: g.clone(), ui: ui_now.clone(), sel: sel.clone() }
+            prompt::DecisionWindow { g: g.clone(), ui: ui_now.clone(), sel: sel.clone(), looking }
             if !starting {
                 super::WaitingNotice {
                     style: format!(
@@ -988,4 +995,26 @@ fn PopupView(popup: Popup, g: Rc<layout::Geometry>, board: Rc<Board>) -> Element
             }
         }
     }
+}
+
+/// The cards the seat is looking at, or has revealed, while it answers a question that
+/// isn't about picking cards (Navigator's "discard them all?") or waits for another
+/// player to pick among them (Envoy): dominion.games shows them in a window.
+fn looked_at(b: &Board, ui: Option<&Ui>) -> Vec<String> {
+    let Some(you) = b.you.as_ref() else {
+        return vec![];
+    };
+    if let Some(u) = ui
+        && (u.decision.kind != "choose"
+            || u.inter.targets.iter().any(|t| t.card.is_some())
+            || u.decision.player != Some(you.seat))
+    {
+        return vec![];
+    }
+    you.zones
+        .iter()
+        .filter(|z| z.key == "looking")
+        .flat_map(|z| &z.zone.known)
+        .flat_map(|s| std::iter::repeat_n(s.card.clone(), s.count as usize))
+        .collect()
 }
