@@ -993,7 +993,7 @@ fn way_questions_read_like_dominion_games() {
             asked += 1;
             let source = d.source.clone().unwrap();
             assert_eq!(
-                wording::prompt_parts(&d, &cards),
+                wording::prompt_parts(&d, &cards, &wording::Asking::default()),
                 [
                     "Consider the Way you play".to_string(),
                     format!("a {source}")
