@@ -565,6 +565,13 @@ fn terminal_results_keep_authoritative_ties_turn_tiebreaks_and_resignation() {
             resigned: vec![],
         },
         Outcome {
+            reason: EndReason::Stalled,
+            scores: vec![3, 3],
+            turns: vec![20, 20],
+            winners: vec![PlayerId(0), PlayerId(1)],
+            resigned: vec![],
+        },
+        Outcome {
             reason: EndReason::Resigned,
             scores: vec![100, 0],
             turns: vec![2, 1],

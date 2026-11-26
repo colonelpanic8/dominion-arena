@@ -875,11 +875,13 @@ fn result(
     {
         return Err(ProjectionError::Inconsistent("outcome players"));
     }
+    // Their result says nothing of why a game ended: a stalled one ends as any other.
     if !matches!(
         outcome.reason,
         EndReason::ProvincesGone
             | EndReason::ColoniesGone
             | EndReason::PilesEmpty
+            | EndReason::Stalled
             | EndReason::Resigned
     ) {
         return Err(ProjectionError::UnsupportedState(
