@@ -4,6 +4,14 @@
 // only play cards whose questions the dominion.games transport maps
 // (`GET /api/official/coverage`); other cards are shown in an opening position.
 const bigHand = (d) => d.name === 'Alice' && d.view.you.hand.count >= 10;
+// Kingdoms of the decision scenarios (the block at the end of the list).
+const BASE = ['Harbinger', 'Library', 'Militia', 'Throne Room', 'Vassal', 'Bandit', 'Bureaucrat', 'Moneylender', 'Poacher', 'Artisan'];
+const INTRIGUE = ['Lurker', 'Patrol', 'Conspirator', 'Ironworks', 'Replace', 'Shanty Town', 'Steward', 'Swindler', 'Trading Post', 'Diplomat'];
+const SEASIDE = ['Warehouse', 'Lookout', 'Navigator', 'Pearl Diver', 'Salvager', 'Smugglers', 'Treasury', 'Cutpurse', 'Explorer', 'Ambassador'];
+const SEASIDE_2 = ['Fishing Village', 'Caravan', 'Tactician', 'Sea Hag', 'Pirate Ship', 'Haven', 'Merchant Ship', 'Island', 'Native Village', 'Lighthouse'];
+const ALCHEMY = ['Apothecary', 'Apprentice', 'Familiar', 'Golem', 'Herbalist', "Philosopher's Stone", 'Scrying Pool', 'Transmute', 'University', 'Vineyard'];
+const HINTERLANDS = ['Cartographer', 'Crossroads', 'Oracle', 'Noble Brigand', "Witch's Hut", "Fool's Gold", 'Guard Dog', 'Trail', 'Weaver', 'Inn'];
+const PROMOS = ['Captain', 'Dismantle', 'Envoy', 'Governor', 'Marchland', 'Prince', 'Walled Village', 'Church', 'Sauna', 'Village'];
 
 export const SCENARIOS = [
   {
@@ -465,4 +473,287 @@ export const SCENARIOS = [
     },
     steps: ['villages', (d) => d.until(bigHand, ['Lost City', 'Council Room', 'Gold', 'Silver']), 'act'],
   },
+  // Decisions, and the Base, Intrigue, Seaside, Alchemy, Hinterlands and Promos cards
+  // whose questions draw something of their own.
+  {
+    name: 'militia-discard',
+    about: "discarding exactly N: Alice discarding down to 3 for Bob's Militia",
+    spec: { kingdom: BASE },
+    steps: ['until Bob Militia: Militia, Silver', 'play Militia'],
+  },
+  {
+    name: 'harbinger-discard',
+    about: 'choosing from the discard pile: Harbinger',
+    spec: { kingdom: BASE },
+    steps: ['turns 4 Harbinger, Silver', 'until Alice Harbinger: Harbinger, Silver', 'play Harbinger'],
+  },
+  {
+    name: 'library-aside',
+    about: 'yes or no on an ability: Library setting an Action aside',
+    spec: { kingdom: BASE },
+    steps: ['turns 6 Library, Vassal, Throne Room', 'until Alice Library: Library, Vassal', 'play Library'],
+  },
+  {
+    name: 'vassal-play',
+    about: "yes or no about a discarded card: Vassal's Action",
+    spec: { kingdom: BASE },
+    steps: ['turns 6 Vassal, Poacher, Moneylender', playAsking('Vassal', ['Vassal', 'Poacher'])],
+  },
+  {
+    name: 'throne-room',
+    about: 'choosing an Action to play twice: Throne Room',
+    spec: { kingdom: BASE },
+    steps: ['turns 4 Throne Room, Militia', 'until Alice Throne Room+Militia: Throne Room, Militia, Silver', 'play Throne Room'],
+  },
+  {
+    name: 'artisan-topdeck',
+    about: "two decisions in a row: Artisan's gain to hand, then a card onto the deck",
+    spec: { kingdom: BASE },
+    steps: ['turns 8 Gold, Artisan, Silver', 'until Alice Artisan: Artisan, Silver', 'play Artisan', 'pick Silver'],
+  },
+  {
+    name: 'warehouse-discard',
+    about: 'discarding exactly 3 on your own turn: Warehouse',
+    spec: { kingdom: SEASIDE },
+    steps: ['until Alice Warehouse: Warehouse, Silver', 'play Warehouse'],
+  },
+  {
+    name: 'lookout-choice',
+    about: 'a choice among cards looked at: Lookout trashing one of three',
+    spec: { kingdom: SEASIDE },
+    steps: ['turns 4 Lookout, Silver', 'until Alice Lookout: Lookout, Silver', 'play Lookout'],
+  },
+  {
+    name: 'navigator-look',
+    about: "a yes or no about cards looked at: Navigator's five, discarded or put back",
+    spec: { kingdom: SEASIDE },
+    steps: ['turns 4 Navigator, Silver', 'until Alice Navigator: Navigator, Silver', 'play Navigator'],
+  },
+  {
+    name: 'navigator-order',
+    about: "ordering cards: Navigator's five put back in any order",
+    spec: { kingdom: SEASIDE },
+    steps: ['turns 4 Navigator, Silver', 'until Alice Navigator: Navigator, Silver', 'play Navigator', 'pick Put them back'],
+  },
+  {
+    name: 'pearl-diver',
+    about: "yes or no about a card shown: Pearl Diver's bottom card",
+    spec: { kingdom: SEASIDE },
+    steps: ['until Alice Pearl Diver: Pearl Diver, Silver', 'play Pearl Diver'],
+  },
+  {
+    name: 'ambassador-reveal',
+    about: 'revealing a card from hand to return: Ambassador',
+    spec: { kingdom: SEASIDE },
+    steps: ['turns 4 Ambassador, Silver', 'until Alice Ambassador: Ambassador, Silver', 'play Ambassador'],
+  },
+  {
+    name: 'treasury-topdeck',
+    about: "an ability at the end of the Buy phase: Treasury back onto the deck",
+    spec: { kingdom: SEASIDE },
+    steps: ['turns 6 Treasury, Silver', 'until Alice Treasury: Treasury, Silver', 'play Treasury', 'treasures', 'buy Silver'],
+  },
+  {
+    name: 'duration-order',
+    about: 'choosing which trigger resolves first: Fishing Village and Caravan at the start of a turn',
+    spec: { kingdom: SEASIDE_2 },
+    steps: [
+      'turns 4 Fishing Village, Caravan',
+      'until Alice Fishing Village+Caravan: Fishing Village, Caravan, Silver',
+      'play Fishing Village',
+      'play Caravan',
+      asked('Alice'),
+    ],
+  },
+  {
+    name: 'pirate-ship-mode',
+    about: "Pirate Ship's choice, Sea Hag and Tactician on the table",
+    spec: { kingdom: SEASIDE_2 },
+    steps: ['turns 4 Pirate Ship, Silver', 'until Alice Pirate Ship: Pirate Ship, Silver', 'play Pirate Ship'],
+  },
+  {
+    name: 'sentry-discard',
+    about: "a decision after a decision: Sentry's discard once nothing is trashed",
+    spec: { kingdom: ['Cellar', 'Chapel', 'Workshop', 'Remodel', 'Pawn', 'Courtier', 'Sentry', 'Moat', 'Militia', 'Village'] },
+    steps: ['turns 8 Sentry, Silver', 'until Alice Sentry', 'play Sentry', 'none'],
+  },
+  {
+    name: 'lurker-gain',
+    about: "choosing from the trash: Lurker's gain",
+    spec: { kingdom: INTRIGUE },
+    steps: [
+      'turns 6 Lurker, Silver',
+      'until Alice Lurker: Silver',
+      'play Lurker',
+      'pick Trash',
+      'pick Patrol',
+      'turn Silver',
+      'until Alice Lurker: Silver',
+      'play Lurker',
+      'pick Gain',
+    ],
+  },
+  {
+    name: 'patrol-order',
+    about: "Patrol's revealed cards put back in any order",
+    spec: { kingdom: INTRIGUE },
+    steps: ['turns 4 Patrol, Silver', 'until Alice Patrol: Patrol, Silver', 'play Patrol'],
+  },
+  {
+    name: 'swindler-pile',
+    about: "choosing a pile for another player: Swindler's card of the same cost",
+    spec: { kingdom: INTRIGUE },
+    steps: ['turns 4 Swindler, Silver', 'until Alice Swindler: Swindler, Silver', 'play Swindler'],
+  },
+  {
+    name: 'trading-post',
+    about: 'trashing exactly 2: Trading Post',
+    spec: { kingdom: INTRIGUE },
+    steps: ['until Alice Trading Post: Trading Post, Silver', 'play Trading Post'],
+  },
+  {
+    name: 'apothecary-order',
+    about: "Potion costs; ordering cards: Apothecary's cards put back",
+    spec: { kingdom: ALCHEMY },
+    steps: ['turns 2 Potion', 'turns 10 Apothecary, Scrying Pool, Potion, Silver', playAsking('Apothecary', ['Apothecary', 'Silver'])],
+  },
+  {
+    name: 'scrying-pool',
+    about: "yes or no about a revealed card: Scrying Pool's for each player",
+    spec: { kingdom: ALCHEMY },
+    steps: ['turns 2 Potion', 'turns 10 Scrying Pool, Apothecary, Potion, Silver', 'until Alice Scrying Pool: Scrying Pool, Silver', 'play Scrying Pool'],
+  },
+  {
+    name: 'cartographer-look',
+    about: "Hinterlands' cards; cards looked at to discard: Cartographer",
+    spec: { kingdom: HINTERLANDS },
+    steps: ['turns 6 Cartographer, Silver', 'until Alice Cartographer: Cartographer, Silver', 'play Cartographer'],
+  },
+  {
+    name: 'oracle-reveal',
+    about: "yes or no about revealed cards: Oracle's two",
+    spec: { kingdom: HINTERLANDS },
+    steps: ['turns 6 Oracle, Silver', 'until Alice Oracle: Oracle, Silver', 'play Oracle'],
+  },
+  {
+    name: 'witchs-hut',
+    about: "discarding exactly 2: Witch's Hut",
+    spec: { kingdom: HINTERLANDS },
+    steps: ['turns 6 Witch\'s Hut, Silver', 'until Alice Witch\'s Hut: Witch\'s Hut, Silver', 'play Witch\'s Hut'],
+  },
+  {
+    name: 'plan-token',
+    about: "choosing a Supply pile for a token: Plan's Trashing token",
+    spec: { kingdom: PROMOS, landscapes: ['Plan', 'Summon'] },
+    steps: ['until Alice Copper+Copper+Copper', 'treasures', 'buy Plan'],
+  },
+  {
+    name: 'prince-aside',
+    about: 'setting aside a card from hand: Prince',
+    spec: { kingdom: PROMOS, landscapes: ['Plan', 'Summon'] },
+    steps: ['turns 8 Prince, Gold, Walled Village, Silver', 'until Alice Prince: Prince, Walled Village, Silver', 'play Prince'],
+  },
+  {
+    name: 'envoy-reveal',
+    about: "another player choosing among your revealed cards: Envoy's five",
+    spec: { kingdom: PROMOS, landscapes: ['Plan', 'Summon'] },
+    steps: ['turns 4 Envoy, Silver', 'until Alice Envoy: Envoy, Silver', 'play Envoy'],
+  },
+  {
+    name: 'captain-pile',
+    about: "a Command choosing a Supply pile: Captain's Action to play",
+    spec: { kingdom: PROMOS, landscapes: ['Plan', 'Summon'] },
+    steps: ['turns 8 Gold, Captain, Silver', playAsking('Captain', ['Captain', 'Silver'])],
+  },
+  {
+    name: 'governor-mode',
+    about: "Governor's three choices",
+    spec: { kingdom: PROMOS, landscapes: ['Plan', 'Summon'] },
+    steps: ['turns 4 Governor, Silver', playAsking('Governor', ['Governor', 'Silver'])],
+  },
+  {
+    name: 'diplomat-react',
+    about: "a Reaction to an Attack: Alice's Diplomat against Bob's Swindler",
+    spec: { kingdom: INTRIGUE },
+    steps: ['turns 6 Diplomat, Swindler, Silver', 'until Bob Swindler & Alice Diplomat: Swindler, Diplomat, Silver', 'play Swindler'],
+  },
+  {
+    name: 'guard-dog-react',
+    about: "a Reaction played from hand: Alice's Guard Dog against Bob's Witch's Hut",
+    spec: { kingdom: HINTERLANDS },
+    steps: ["turns 6 Witch's Hut, Guard Dog, Silver", "until Bob Witch's Hut & Alice Guard Dog: Witch's Hut, Guard Dog, Silver", "play Witch's Hut"],
+  },
+  {
+    name: 'inn-gain',
+    about: "an ability on gaining a card: Inn's Actions from the discard pile",
+    spec: { kingdom: HINTERLANDS },
+    steps: ['turns 6 Oracle, Cartographer, Silver', buyAsking('Inn', ['Oracle', 'Cartographer', 'Silver'])],
+  },
+  {
+    name: 'golem-order',
+    about: "Golem's two revealed Actions",
+    spec: { kingdom: ALCHEMY },
+    steps: ['turns 2 Potion', 'turns 12 Golem, University, Apothecary, Potion, Silver', playAsking('Golem', ['Golem', 'Apothecary', 'Silver'])],
+  },
+  {
+    name: 'unplayed-opening',
+    about: "cards whose questions the transport doesn't play yet (Ghost Ship, Embassy, Mandarin), at the start",
+    spec: { kingdom: ['Ghost Ship', 'Embassy', 'Mandarin', 'Duchess', 'Nomad Camp', 'Ill-Gotten Gains', 'Oasis', 'Scheme', 'Moneylender', 'Poacher'] },
+    steps: [],
+  },
+  {
+    name: 'hinterlands-more',
+    about: "the rest of Hinterlands, Merchant and Stash, at the start",
+    spec: { kingdom: ['Silk Road', 'Spice Merchant', 'Stables', 'Berserker', 'Cauldron', 'Stash', 'Merchant', 'Sea Hag', 'Tactician', 'Smugglers'] },
+    steps: [],
+  },
 ];
+
+// Answers every question the least it allows until `who` is asked something other than
+// a move of their turn.
+function asked(who) {
+  return async (d) => {
+    for (let i = 0; i < 200; i++) {
+      const x = await d.deciding();
+      if (!x) throw new Error(`asked ${who}: nobody is deciding`);
+      if (x.name === who && x.decision.kind !== 'turn') return;
+      await d.fallback(x);
+    }
+    throw new Error(`${who} was never asked anything`);
+  };
+}
+
+// Turns of buying `buys` until Alice, holding `card`, plays it and is asked something.
+function playAsking(card, buys) {
+  return async (d) => {
+    for (let i = 0; i < 20; i++) {
+      await d.step(`until Alice ${card}: ${buys.join(', ')}`);
+      await d.step(`play ${card}`);
+      const x = await d.deciding();
+      if (x?.name === 'Alice' && x.decision.kind !== 'turn') return;
+      await d.turn(buys);
+    }
+    throw new Error(`${card} never asked anything`);
+  };
+}
+
+// Turns of buying `buys` until Alice can buy `card`, buys it and is asked something.
+function buyAsking(card, buys) {
+  return async (d) => {
+    for (let i = 0; i < 40; i++) {
+      const x = await d.deciding();
+      if (x?.name === 'Alice' && x.decision.kind === 'turn') {
+        await d.act();
+        const y = await d.deciding();
+        const o = y.decision.options?.find((o) => o.action === 'buy' && o.card === card);
+        if (o) {
+          await d.answer(y, [o.index]);
+          const z = await d.deciding();
+          if (z?.name === 'Alice' && z.decision.kind !== 'turn') return;
+        }
+      }
+      await d.turn(buys);
+    }
+    throw new Error(`buying ${card} never asked anything`);
+  };
+}
