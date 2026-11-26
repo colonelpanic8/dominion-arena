@@ -1384,3 +1384,59 @@ fn counted_tokens_sit_on_their_pile_or_landscape_as_tokens() {
         ("sinister-plot", Some(3), Some(1))
     );
 }
+
+#[test]
+fn sinister_plot_buttons_use_the_deciding_players_token_count() {
+    let cards = card_db();
+    let mut c = config(&["Village", "Smithy"], 2, 1);
+    c.landscapes = vec![Card::SinisterPlot];
+    let mut table = Table::new("g", c, vec![]).unwrap();
+    let player = PlayerId(0);
+    let mut expected = ["Draw 0 cards", "Draw a card", "Draw 2 cards"].into_iter();
+    for _ in 0..80 {
+        let seat = table.deciding().unwrap();
+        let view = table.view(seat);
+        let d = view.decision.as_ref().unwrap();
+        let inter = interaction(&view, d, &cards);
+        let target = if d.source.as_deref() == Some("Sinister Plot") {
+            assert_eq!(seat, player);
+            assert_eq!(wording::prompt(d, &cards), "Sinister Plot");
+            assert_eq!(wording::own_prompt(d), "Sinister Plot");
+            assert!(inter.targets.iter().all(|t| t.place == Place::Button));
+            let draw = expected.next().unwrap();
+            assert_eq!(inter.targets[0].label, "Add token");
+            assert_eq!(inter.targets[1].label, draw);
+            if draw == "Draw 2 cards" {
+                let answer = Selection::new(inter.targets[1].options.clone())
+                    .answer(d)
+                    .unwrap();
+                table.answer(seat, &answer).unwrap();
+                let after = table.view(seat);
+                assert_eq!(
+                    after.you.unwrap().hand.count,
+                    view.you.unwrap().hand.count + 2
+                );
+                assert!(after.notes.iter().any(|n| n.source == "Sinister Plot"
+                    && n.player == Some(player.0)
+                    && n.count == 0));
+                return;
+            }
+            &inter.targets[0]
+        } else {
+            inter
+                .targets
+                .iter()
+                .find(|t| {
+                    seat == player
+                        && t.action == "buy-landscape"
+                        && t.card.as_deref() == Some("Sinister Plot")
+                })
+                .or_else(|| inter.targets.iter().find(|t| t.action == "play"))
+                .or_else(|| inter.targets.iter().find(|t| t.action == "end-phase"))
+                .unwrap()
+        };
+        let answer = Selection::new(vec![target.options[0]]).answer(d).unwrap();
+        table.answer(seat, &answer).unwrap();
+    }
+    panic!("did not get to draw two cards with Sinister Plot");
+}

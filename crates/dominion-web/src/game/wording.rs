@@ -3,7 +3,7 @@
 //! Buys", "Confirm Discarding", "Don't Throne"). Pure, tested natively.
 
 use crate::cards::CardDb;
-use dominion_protocol::AgentDecision;
+use dominion_protocol::{AgentDecision, AgentOption, NoteView};
 
 fn bounds(d: &AgentDecision) -> (u32, u32) {
     (d.min.unwrap_or(1), d.max.unwrap_or(1))
@@ -42,10 +42,34 @@ fn down_to(text: &str) -> Option<u32> {
     text[at + 8..].split_whitespace().next()?.parse().ok()
 }
 
-/// A decision's own prompt without the note telling agents they may answer the Way
-/// question in advance (the table asks it when it comes).
+/// A decision's own prompt as shown to a player, without agent-only Way hints.
 pub fn own_prompt(d: &AgentDecision) -> &str {
+    if is_sinister_plot(d) {
+        return "Sinister Plot";
+    }
     without_way_hint(&d.prompt)
+}
+
+fn is_sinister_plot(d: &AgentDecision) -> bool {
+    d.source.as_deref() == Some("Sinister Plot") && matches!(d.purpose.as_str(), "either" | "mode")
+}
+
+pub(crate) fn option_label(d: &AgentDecision, o: &AgentOption, notes: &[NoteView]) -> String {
+    if is_sinister_plot(d) && o.action == "mode" {
+        if matches!(o.label.as_str(), "Add a token" | "Add token") {
+            return "Add token".into();
+        }
+        if (o.label == "Draw" || o.label.starts_with("Remove your "))
+            && let Some(player) = d.player
+            && let Some(count) = notes
+                .iter()
+                .find(|n| n.source == "Sinister Plot" && n.player == Some(player))
+                .and_then(|n| u32::try_from(n.count).ok())
+        {
+            return format!("Draw {}", cards_word(count));
+        }
+    }
+    o.label.clone()
 }
 
 const WAY_HINT: &str = " (to pre-answer the Way question";
@@ -185,6 +209,9 @@ pub fn prompt(d: &AgentDecision, cards: &CardDb) -> String {
 
 /// [`prompt`] in the parts dominion.games draws apart (an amount of coins).
 pub fn prompt_parts(d: &AgentDecision, cards: &CardDb) -> Vec<String> {
+    if is_sinister_plot(d) {
+        return vec![own_prompt(d).into()];
+    }
     if is_way(d, cards) {
         let card = d.source.as_deref().unwrap_or("it");
         let article = if card.starts_with(['A', 'E', 'I', 'O', 'U']) {
