@@ -362,6 +362,7 @@ pub fn TableCard(
 ) -> Element {
     let ctx = use_table();
     let assets = use_assets();
+    let cost = cost.or_else(|| ctx.costs.read().get(&name).cloned());
     let Mark {
         target,
         options,

@@ -160,7 +160,6 @@ body:has(.dt-root) .topbar { display: none; }
 .dt-tokens { position: absolute; left: 0; right: 0; top: 60%; display: flex; flex-wrap: wrap; justify-content: center; gap: 2cqw; pointer-events: auto; }
 .dt-micro .dt-tokens { top: 0; bottom: 0; left: auto; right: 4%; align-items: center; }
 .dt-label { position: absolute; left: 0; right: 0; bottom: -2.4em; text-align: center; font-size: calc(1.4 * var(--vh)); color: #ddd; text-shadow: 0 0 3px #000, 0 0 3px #000; white-space: nowrap; }
-.dt-cost-changed .dc-cost { filter: drop-shadow(0 0 3px #7f7); }
 
 /* Badges: tokens and counters on piles and bars. */
 .dt-badges { display: inline-flex; gap: calc(0.4 * var(--vh)); align-items: center; }
