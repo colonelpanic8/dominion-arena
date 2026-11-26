@@ -521,7 +521,9 @@ export const SCENARIOS = [
     steps: [
       'nights',
       'prefer Copper, Estate, Village, Smithy',
-      'spree 18 Prince, Summon, Crypt, Research, Cargo Ship, Gold, Silver',
+      'turns 8 Gold, Silver',
+      'spree 14 Prince, Summon, Crypt, Research, Cargo Ship, Gold, Silver',
+      (d) => d.until((x) => x.name === 'Alice' && x.view.lasting?.some((l) => l.card === 'Prince' && l.owner === 0), ['Summon', 'Crypt', 'Cargo Ship', 'Gold', 'Silver'], { spree: true }),
       'act',
     ],
   },
@@ -659,8 +661,72 @@ export const SCENARIOS = [
     },
     steps: ['villages', 'turns 12 Bridge Troll, Relic, Lost City, Caravan Guard, Ranger, Raze, Silver', 'turn Raid', 'turn Raid', 'act'],
   },
+  {
+    name: 'nocturne-collect',
+    about: 'Nocturne cards played over a game, Night cards at night: Conclave, Cobbler, Den of Sin, Raider, Werewolf, Tormentor, Changeling',
+    spec: {
+      kingdom: ['Conclave', 'Cobbler', 'Den of Sin', 'Raider', 'Werewolf', 'Tormentor', 'Sacred Grove', 'Faithful Hound', 'Changeling', 'Monastery'],
+    },
+    steps: ['villages', 'nights', 'turns 6 Gold, Silver', (d) => collect(d, 20, ['Conclave', 'Cobbler', 'Den of Sin', 'Raider', 'Werewolf', 'Tormentor', 'Sacred Grove', 'Faithful Hound', 'Monastery']), 'act'],
+  },
+  {
+    name: 'renaissance-collect',
+    about: 'Renaissance cards played over a game, Projects bought (Piazza, Canal, Guildhall, Exploration)',
+    spec: {
+      kingdom: ['Mountain Village', 'Patron', 'Old Witch', 'Improve', 'Experiment', 'Priest', 'Scholar', 'Inventor', 'Lackeys', 'Villain'],
+      landscapes: ['Piazza', 'Canal', 'Guildhall', 'Exploration'],
+    },
+    steps: ['villages', (d) => collect(d, 18, ['Canal', 'Piazza', 'Mountain Village', 'Patron', 'Old Witch', 'Improve', 'Experiment', 'Priest', 'Scholar', 'Inventor', 'Lackeys', 'Villain', 'Guildhall']), 'act'],
+  },
+  {
+    name: 'menagerie-collect',
+    about: 'Menagerie cards played over a game: Village Green, Barge, Falconer, Hostelry, Mastermind, Sanctuary, Scrap, Sheepdog, Destrier, Coven; Ways and Events',
+    spec: {
+      kingdom: ['Village Green', 'Barge', 'Falconer', 'Hostelry', 'Mastermind', 'Sanctuary', 'Scrap', 'Sheepdog', 'Destrier', 'Coven'],
+      landscapes: ['Way of the Camel', 'Way of the Worm', 'Banish', 'Delay'],
+    },
+    steps: ['villages', (d) => collect(d, 18, ['Village Green', 'Barge', 'Falconer', 'Hostelry', 'Mastermind', 'Sanctuary', 'Scrap', 'Sheepdog', 'Destrier', 'Coven']), 'act'],
+  },
+  {
+    name: 'plunder-collect',
+    about: 'Plunder cards played over a game: Wealthy Village, Gondola, Frigate, Landing Party, Quartermaster, Siren, Stowaway, Trickster, Enlarge, Abundance',
+    spec: {
+      kingdom: ['Wealthy Village', 'Gondola', 'Frigate', 'Landing Party', 'Quartermaster', 'Siren', 'Stowaway', 'Trickster', 'Enlarge', 'Abundance'],
+      landscapes: ['Prosper', 'Prepare', 'Cursed', 'Tireless'],
+    },
+    steps: ['villages', (d) => collect(d, 18, ['Wealthy Village', 'Gondola', 'Frigate', 'Landing Party', 'Quartermaster', 'Siren', 'Stowaway', 'Trickster', 'Enlarge', 'Abundance']), 'act'],
+  },
+  {
+    name: 'rising-sun-collect',
+    about: 'Rising Sun cards played over a game: Shadows, Debt costs, Samurai; an Event and a Prophecy',
+    spec: {
+      kingdom: ['Alley', 'Artist', 'Craftsman', 'Fishmonger', 'Gold Mine', 'Imperial Envoy', 'Ronin', 'Root Cellar', 'Samurai', 'Tanuki'],
+      landscapes: ['Foresight', 'Kind Emperor'],
+    },
+    steps: ['villages', (d) => collect(d, 22, ['Samurai', 'Alley', 'Fishmonger', 'Ronin', 'Tanuki', 'Artist', 'Craftsman', 'Gold Mine', 'Imperial Envoy', 'Root Cellar']), 'act'],
+  },
+  {
+    name: 'adventures-collect',
+    about: 'Adventures cards played over a game: Artificer, Giant, Magpie, Messenger, Port, Storyteller, Treasure Trove, Wine Merchant, Lost City, Swamp Hag',
+    spec: {
+      kingdom: ['Artificer', 'Giant', 'Magpie', 'Messenger', 'Port', 'Storyteller', 'Treasure Trove', 'Wine Merchant', 'Lost City', 'Swamp Hag'],
+      landscapes: ['Ball', 'Borrow', 'Pilgrimage', 'Travelling Fair'],
+    },
+    steps: ['villages', (d) => collect(d, 18, ['Lost City', 'Giant', 'Swamp Hag', 'Artificer', 'Magpie', 'Messenger', 'Port', 'Storyteller', 'Treasure Trove', 'Wine Merchant', 'Pilgrimage']), 'act'],
+  },
 ];
 
 function attackTokens(t) {
   return t?.minusCard && t?.minusCoin;
+}
+
+/// `n` turns, each buying the first card of `cards` its player doesn't have yet (else a
+/// Silver): a game that plays many different cards.
+async function collect(d, n, cards) {
+  for (let i = 0; i < n; i++) {
+    const x = await d.deciding();
+    if (!x) return;
+    const owned = x.view.you?.owned?.known ?? {};
+    await d.turn([...cards.filter((c) => !owned[c]), 'Silver']);
+  }
 }
