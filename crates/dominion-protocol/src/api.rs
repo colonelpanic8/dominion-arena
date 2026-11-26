@@ -838,10 +838,14 @@ pub enum AdviseMode {
     Always,
 }
 
-/// What a model wrote for the person holding its seat.
+/// What a seat's model, or an analyst working beside it, wrote for the person holding
+/// the seat.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelNote {
+    /// Who wrote it, when the seat's model didn't: "Opening analyst".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from: Option<String>,
     /// The decision it is about, if it is about one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub decision: Option<String>,

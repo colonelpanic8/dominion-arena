@@ -159,10 +159,17 @@ pub fn use_models(
 
 /// How a note stands to the game now: about the decision open, written this turn, or
 /// older.
-fn freshness(note: &ModelNote, decision: Option<&str>, turn: Option<u32>) -> &'static str {
+/// How current a note is: about the open decision, of this turn, or passed. An
+/// analyst's plan (`latest_plan`: the last of them) stands until its next.
+fn freshness(
+    note: &ModelNote,
+    latest_plan: bool,
+    decision: Option<&str>,
+    turn: Option<u32>,
+) -> &'static str {
     if note.decision.is_some() && note.decision.as_deref() == decision {
         "now"
-    } else if note.turn.is_some() && note.turn == turn {
+    } else if latest_plan || (note.turn.is_some() && note.turn == turn) {
         "turn"
     } else {
         "old"
@@ -182,6 +189,7 @@ fn Notes(notes: Vec<ModelNote>, empty: String) -> Element {
         )
     };
     let count = notes.len();
+    let plan = notes.iter().rposition(|n| n.from.is_some());
     use_effect(use_reactive!(|count| {
         let _ = count;
         document::eval(
@@ -194,8 +202,12 @@ fn Notes(notes: Vec<ModelNote>, empty: String) -> Element {
                 li { class: "model-note-none", "{empty}" }
             }
             for (i, note) in notes.iter().enumerate() {
-                li { key: "{i}", class: "model-note", "data-fresh": freshness(note, decision.as_deref(), turn),
-                    if let Some(turn) = note.turn { span { class: "model-note-when", "Turn {turn} " } }
+                li { key: "{i}", class: "model-note", "data-from": note.from.clone(),
+                    "data-fresh": freshness(note, plan == Some(i), decision.as_deref(), turn),
+                    span { class: "model-note-when",
+                        if let Some(from) = &note.from { "{from} · " }
+                        if let Some(turn) = note.turn { "Turn {turn} " }
+                    }
                     "{note.text}"
                 }
             }

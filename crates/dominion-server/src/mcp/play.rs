@@ -37,6 +37,15 @@ pub struct AdviseParams {
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
+pub struct NoteParams {
+    pub token: Option<String>,
+    /// Who wrote it: "Opening analyst".
+    pub from: String,
+    pub text: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct StepParams {
     pub token: Option<String>,
     pub decision: String,

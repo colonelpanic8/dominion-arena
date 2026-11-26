@@ -59,6 +59,29 @@ impl Hosted {
         (model.control.note(&now, text, crate::hub::now_ms())).map_err(|e| format!("REFUSED: {e}"))
     }
 
+    /// Keeps what `from`, an analyst working beside the account's model, wrote in the
+    /// running game `view` shows.
+    pub(in crate::online) fn note(
+        &self,
+        view: &dominion_protocol::AgentView,
+        from: &str,
+        text: &str,
+    ) -> Result<(), String> {
+        let Some(game) = view.game.id.as_ref().filter(|_| view.game.running) else {
+            return Err("REFUSED: no game is running".into());
+        };
+        let mut model = crate::hub::lock(&self.model);
+        if &model.game != game {
+            model.game = game.clone();
+            model.control = Default::default();
+        }
+        let now = crate::model_control::Moment::of(view);
+        (model
+            .control
+            .helper_note(&now, from, text, crate::hub::now_ms()))
+        .map_err(|e| format!("REFUSED: {e}"))
+    }
+
     pub(in crate::online) fn check_model(&self, generation: u64) -> Result<(), String> {
         let model = crate::hub::lock(&self.model);
         if generation != model.generation {
@@ -208,6 +231,9 @@ pub(super) async fn model_action(
             drop(reservation);
         }
         _ => {}
+    }
+    if let Some(change) = crate::model_control::holding_change(&req.action) {
+        crate::model_control::log_change(&req.game, req.seat, &who, change);
     }
     {
         let mut model = crate::hub::lock(&web.hosted.model);

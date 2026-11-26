@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 /// The most notes kept for a seat.
 const MAX_NOTES: usize = 40;
 const MAX_NOTE_CHARS: usize = 4000;
+const MAX_FROM_CHARS: usize = 60;
 
 /// Who directs a seat's model.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -60,6 +61,20 @@ pub struct ModelControl {
     pub advised_turn: Option<u32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub notes: Vec<ModelNote>,
+}
+
+/// Says in the server's log that who holds a seat changed: nothing else keeps when.
+pub fn log_change(game: &str, seat: u8, who: &str, change: &str) {
+    eprintln!("dominion: {game} seat {seat}: {who} {change}");
+}
+
+/// What `action` changes about who holds a seat, if it does.
+pub fn holding_change(action: &ModelAction) -> Option<&'static str> {
+    match action {
+        ModelAction::Take => Some("took the seat from its model"),
+        ModelAction::Release => Some("handed the seat to its model"),
+        _ => None,
+    }
 }
 
 /// What of a seat's view decides whether its model owes a note.
@@ -223,15 +238,46 @@ impl ModelControl {
         }
         self.advised = now.decision.clone();
         (self.requested, self.asked) = (false, false);
-        self.notes.push(ModelNote {
+        self.keep(ModelNote {
+            from: None,
             decision: now.decision.clone(),
             turn: now.turn,
-            text: text.chars().take(MAX_NOTE_CHARS).collect(),
+            text: text.into(),
             at,
         });
+        Ok(())
+    }
+
+    /// Keeps what `from`, an analyst working beside the seat's model, wrote: whoever
+    /// holds the seat, and settling nothing its holder asked of the model.
+    pub fn helper_note(
+        &mut self,
+        now: &Moment,
+        from: &str,
+        text: &str,
+        at: u64,
+    ) -> Result<(), HubError> {
+        let (from, text) = (from.trim(), text.trim());
+        if text.is_empty() || from.is_empty() || from.chars().count() > MAX_FROM_CHARS {
+            return Err(HubError::BadRequest(
+                "note needs text and who it is from, in at most 60 characters".into(),
+            ));
+        }
+        self.keep(ModelNote {
+            from: Some(from.into()),
+            decision: None,
+            turn: now.turn,
+            text: text.into(),
+            at,
+        });
+        Ok(())
+    }
+
+    fn keep(&mut self, mut note: ModelNote) {
+        note.text = note.text.chars().take(MAX_NOTE_CHARS).collect();
+        self.notes.push(note);
         let extra = self.notes.len().saturating_sub(MAX_NOTES);
         self.notes.drain(..extra);
-        Ok(())
     }
 }
 
@@ -278,6 +324,21 @@ mod tests {
         assert!(!control.wants_advice(&view(Some(("d2", "play")), 3)));
         assert_eq!(control.notes[0].text, "Play Village first.");
         assert_eq!(control.notes[0].decision.as_deref(), Some("d1"));
+    }
+
+    #[test]
+    fn an_analysts_note_is_kept_whoever_holds_the_seat_and_settles_nothing() {
+        let mut models = ModelControl::default();
+        let d1 = view(Some(("d1", "buy")), 2);
+        (models.helper_note(&d1, "Opening analyst", "Open Militia.", 5)).unwrap();
+        assert!(models.helper_note(&d1, " ", "Open Militia.", 5).is_err());
+        let mut control = held();
+        (control.update("ann", Director::Player, &ModelAction::Request)).unwrap();
+        (control.helper_note(&d1, "Strategy analyst", "Green now.", 5)).unwrap();
+        assert!(control.wants_advice(&d1));
+        let note = &control.notes[0];
+        assert_eq!(note.from.as_deref(), Some("Strategy analyst"));
+        assert_eq!((note.decision.as_deref(), note.turn), (None, Some(2)));
     }
 
     #[test]

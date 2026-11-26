@@ -281,6 +281,10 @@ impl PlaySeat for ArenaSeat<'_> {
         (self.hub.advise(&self.seat, text)).map_err(|e| format!("REFUSED: {e}"))
     }
 
+    fn note(&self, from: &str, text: &str) -> Result<(), String> {
+        (self.hub.helper_note(&self.seat, from, text)).map_err(|e| format!("REFUSED: {e}"))
+    }
+
     fn no_game(&self) -> String {
         NO_GAME.into()
     }
@@ -581,6 +585,20 @@ impl Session {
             Err(e) => return Ok(e),
         };
         Ok(self.play(&seat).advise(&p.text, p.timeout_s).await)
+    }
+
+    #[tool(
+        description = "dominion/play@1: for a harness, not the seat's model: keeps a note from an analyst working beside the model (`from` names it) with the model's own, for whoever holds the seat. Returns no view."
+    )]
+    async fn note(
+        &self,
+        Parameters(p): Parameters<play::NoteParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let seat = match self.play_seat(p.token.as_deref()) {
+            Ok(seat) => self.arena_seat(seat),
+            Err(e) => return Ok(e),
+        };
+        Ok(self.play(&seat).note(&p.from, &p.text))
     }
 
     #[tool(
@@ -1488,6 +1506,20 @@ mod tests {
         };
         let waited = session.wait(Parameters(wait)).await.unwrap();
         assert!(text(&waited).contains("ADVICE WANTED"), "{}", text(&waited));
+        // An analyst beside the model writes with it, and settles nothing asked of it.
+        let note = play::NoteParams {
+            token: token.clone(),
+            from: "Opening analyst".into(),
+            text: "Open Militia.".into(),
+        };
+        let noted = session.note(Parameters(note)).await.unwrap();
+        assert_ne!(noted.is_error, Some(true), "{}", text(&noted));
+        let wait = play::WaitParams {
+            token: token.clone(),
+            timeout_s: Some(0),
+        };
+        let waited = session.wait(Parameters(wait)).await.unwrap();
+        assert!(text(&waited).contains("ADVICE WANTED"), "{}", text(&waited));
         let advise = play::AdviseParams {
             token,
             text: "Village first.".into(),
@@ -1496,6 +1528,15 @@ mod tests {
         let advised = session.advise(Parameters(advise)).await.unwrap();
         assert!(text(&advised).contains("No note is wanted now"));
         let seat = hub.model_seats(&id, who, None).unwrap().remove(0);
-        assert_eq!(seat.notes[0].text, "Village first.");
+        let notes: Vec<_> = (seat.notes.iter())
+            .map(|n| (n.from.as_deref(), n.text.as_str()))
+            .collect();
+        assert_eq!(
+            notes,
+            [
+                (Some("Opening analyst"), "Open Militia."),
+                (None, "Village first.")
+            ]
+        );
     }
 }

@@ -138,6 +138,14 @@ impl PlaySeat for Session {
         }
     }
 
+    fn note(&self, from: &str, text: &str) -> Result<(), String> {
+        let view = self.client.current().view()?;
+        match (&self.managed, view) {
+            (Some((hosted, _)), Some(view)) => hosted.note(&view, from, text),
+            _ => Err("REFUSED: this seat keeps no notes".into()),
+        }
+    }
+
     fn cards(&self, names: &[String]) -> Result<Vec<GlossaryEntry>, String> {
         glossary(&self.client.current().reducer, names)
     }
@@ -200,6 +208,12 @@ impl Session {
     )]
     async fn advise(&self, Parameters(p): Parameters<play::AdviseParams>) -> CallToolResult {
         self.play().advise(&p.text, p.timeout_s).await
+    }
+    #[tool(
+        description = "For a harness, not the seat's model: keeps a note from an analyst working beside the model (`from` names it) with the model's own, for whoever holds the seat. Token is ignored."
+    )]
+    async fn note(&self, Parameters(p): Parameters<play::NoteParams>) -> CallToolResult {
+        self.play().note(&p.from, &p.text)
     }
     #[tool(description = "Official card text and current costs for named cards.")]
     async fn cards(&self, Parameters(p): Parameters<CardsParams>) -> CallToolResult {

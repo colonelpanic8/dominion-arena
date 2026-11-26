@@ -137,6 +137,9 @@ impl Hub {
             })?;
             game.version.send_modify(|v| *v += 1);
         }
+        if let Some(change) = crate::model_control::holding_change(&req.action) {
+            crate::model_control::log_change(id, req.seat, who, change);
+        }
         Ok(())
     }
 
@@ -170,6 +173,7 @@ impl Hub {
             }
         }
         let token = token();
+        let attached = format!("attached {name} to their seat");
         let control = ModelControl {
             controller: Some(who.into()),
             aided: Some(name.clone()),
@@ -193,6 +197,7 @@ impl Hub {
         };
         lock(&self.index).seats.insert(token, model);
         game.version.send_modify(|v| *v += 1);
+        crate::model_control::log_change(id, seat, who, &attached);
         Ok(())
     }
 
@@ -222,6 +227,7 @@ impl Hub {
         })?;
         lock(&self.index).seats.remove(&token);
         game.version.send_modify(|v| *v += 1);
+        crate::model_control::log_change(id, seat, who, "sent their seat's model away");
         Ok(())
     }
 
@@ -265,6 +271,21 @@ impl Hub {
 
     /// Keeps what `seat`'s model wrote for the person holding the seat.
     pub(crate) fn advise(&self, seat: &Seat, text: &str) -> Result<(), HubError> {
+        self.write_note(seat, |control, now| control.note(now, text, now_ms()))
+    }
+
+    /// Keeps what `from`, an analyst working beside `seat`'s model, wrote.
+    pub(crate) fn helper_note(&self, seat: &Seat, from: &str, text: &str) -> Result<(), HubError> {
+        self.write_note(seat, |control, now| {
+            control.helper_note(now, from, text, now_ms())
+        })
+    }
+
+    fn write_note(
+        &self,
+        seat: &Seat,
+        write: impl FnOnce(&mut ModelControl, &crate::model_control::Moment) -> Result<(), HubError>,
+    ) -> Result<(), HubError> {
         let game = self.game(&seat.game)?;
         let mut table = lock(&game.table);
         let i = seat.seat.index();
@@ -279,7 +300,7 @@ impl Hub {
             control
         };
         let now = crate::model_control::Moment::of(&table.view(seat.seat));
-        control.note(&now, text, now_ms())?;
+        write(&mut control, &now)?;
         self.commit(&game, &mut table, None, |meta, table| {
             meta.model_controls
                 .resize_with(table.names().len(), Default::default);

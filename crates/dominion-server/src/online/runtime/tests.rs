@@ -921,6 +921,9 @@ async fn hosted_watching_is_public_but_management_and_mcp_require_owner() {
             .text
             .contains("Keep the Village.")
     );
+    // What an analyst beside the model wrote while the model played is the holder's too.
+    let analyst = serde_json::json!({ "from": "Opening analyst", "text": "Open Silver." });
+    assert!(capability.call("note", analyst).await.unwrap().ok);
     // The account's owner holds its seat, as an admin may; its model goes on reading
     // along, answers nothing and writes when asked.
     let seats: Vec<dominion_protocol::api::ModelSeat> = action(&owner, take.clone())
@@ -978,7 +981,16 @@ async fn hosted_watching_is_public_but_management_and_mcp_require_owner() {
         .json()
         .await
         .unwrap();
-    assert_eq!(seats[0].notes[0].text, "Play the Village first.");
+    let notes: Vec<_> = (seats[0].notes.iter())
+        .map(|n| (n.from.as_deref(), n.text.as_str()))
+        .collect();
+    assert_eq!(
+        notes,
+        [
+            (Some("Opening analyst"), "Open Silver."),
+            (None, "Play the Village first.")
+        ]
+    );
     let answer = Answer {
         decision: decision.id.clone(),
         indices: Some(vec![decision.options[0].index]),

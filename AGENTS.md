@@ -113,7 +113,8 @@ crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum), termin
   src/limits.rs           token-bucket rate limits (pure)
   src/model_control.rs    a seat a person and a model share (`ModelControl`): who holds it,
                           the model attached to a person's seat, when it owes its holder a
-                          note (`Moment`, `wants_advice`) and the notes. The hub's side is
+                          note (`Moment`, `wants_advice`) and the notes, the runner's
+                          analysts' among them (`helper_note`). The hub's side is
                           `hub/model.rs`: `Seat::model` marks the attached model's own
                           token, and `Hosted::turn_of` is the one gate on who may answer
   src/house.rs            the agent socket: the runner's messages and the server's end
