@@ -4,7 +4,7 @@
 //! tabs for mats and set-aside cards.
 
 use super::layout::{Geometry, Rect};
-use super::pieces::{CardName, LastingReminder, Reminder, TableCard, cube_icon, seat_class};
+use super::pieces::{CardName, Reminder, TableCard, cube_icon, seat_class};
 use super::supply::{Badges, Tab};
 use super::{Composition, DecksView, Popup, Spot, Ui, mark_at, use_table};
 use crate::app::use_cards;
@@ -35,7 +35,6 @@ fn PlayerBar(player: PlayerEntry, at: Rect, you: bool, active: bool, cubes: usiz
     let assets = use_assets();
     let p = &player;
     let seat = p.seat;
-    let reminders: Vec<String> = p.states.iter().chain(&p.artifacts).cloned().collect();
     let cube = assets.file_url(&cube_icon(seat));
     let account = p.account.clone();
     let away = account.as_ref().is_some_and(|a| !a.connected);
@@ -94,15 +93,9 @@ fn PlayerBar(player: PlayerEntry, at: Rect, you: bool, active: bool, cubes: usiz
                         if let Some(src) = cube.clone() { img { src, alt: "", draggable: "false" } }
                     }
                 }
-                Badges { badges: p.badges.clone() }
-                for (c, n) in p.lasting.iter() {
-                    LastingReminder { key: "l{c}", name: c.clone(), count: *n }
-                }
-                for c in reminders.iter() {
-                    Reminder { key: "r{c}", name: c.clone() }
-                }
-                for c in p.boons.iter() {
-                    span { key: "h{c}", class: "dt-bar-held", CardName { name: c.clone() } }
+                Badges { badges: p.bar_tokens() }
+                for (c, n) in p.reminders.iter() {
+                    Reminder { key: "{c}", name: c.clone(), count: *n }
                 }
                 for (k, v) in p.counters.iter() {
                     span { key: "c{k}", class: "dt-bar-held", "{k} {v}" }
@@ -326,6 +319,7 @@ pub fn Opponents(board: Rc<Board>, g: Rc<Geometry>, active: Option<u8>) -> Eleme
                             back: true,
                             inverted: true,
                             count: Some(o.deck.count),
+                            badges: o.deck_tokens(),
                             at: g.opp_deck,
                             anchor: format!("deck:{}", o.seat),
                             opens: deck.clone(),
@@ -826,6 +820,7 @@ pub fn YourArea(board: Rc<Board>, g: Rc<Geometry>, ui: Option<Rc<Ui>>, sel: Sele
                 size: CardSize::Full,
                 back: true,
                 count: Some(you.deck.count),
+                badges: you.deck_tokens(),
                 at: g.your_deck,
                 anchor: format!("deck:{}", you.seat),
                 opens: deck.clone(),
