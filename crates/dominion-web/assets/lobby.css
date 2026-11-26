@@ -946,21 +946,6 @@ a.lb-user-name:hover { text-decoration: underline; }
 .lb-last-game { margin: 1vh 0 0; color: var(--text-soft); font: 1.7vh var(--ui); }
 .lb-last-game a { color: var(--gold); }
 .lb-refused { margin: .5vh 2vh; color: var(--bad); font: 1.7vh var(--ui); text-align: center; }
-/* Beside Ready, on the buttons' line. */
-.lb-table-note {
-  position: absolute;
-  left: 2vh;
-  right: calc(50% + 14.25vh + .5vw + 2vh);
-  top: calc(88vh - 2px);
-  height: 5.8vh;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  margin: 0;
-  text-align: right;
-  color: var(--gold);
-  font: 1.9vh var(--ui);
-}
 .lb-no-table { display: flex; flex-direction: column; align-items: center; gap: 1vh; margin-top: 20vh; font: 2.5vh var(--ui); }
 
 /* What everyone but the host sees: the rules, with nothing to press. */
@@ -970,8 +955,32 @@ a.lb-user-name:hover { text-decoration: underline; }
 .lb-readonly .lb-kcard:hover, .lb-readonly .lb-lcard.clickable:hover { border-color: #000; }
 .lb-readonly .lb-rule-input { border-color: transparent; }
 
-.lb-table-buttons { position: absolute; left: 0; top: calc(88vh - 2px); display: flex; justify-content: center; width: 100%; }
-.lb-table-buttons > .lb-button { width: 14vh; height: 5.8vh; padding: 1vh; font-size: 3vh; margin: 0 .25vw; }
+/* The buttons centred, the note in the space left of them. */
+.lb-table-buttons {
+  position: absolute;
+  left: 0;
+  top: calc(88vh - 2px);
+  display: grid;
+  grid-template-columns: 1fr auto auto 1fr;
+  align-items: center;
+  width: 100%;
+}
+.lb-table-buttons > .lb-button {
+  min-width: 14vh;
+  height: 5.8vh;
+  padding: 1vh 2vh;
+  font-size: 3vh;
+  white-space: nowrap;
+  margin: 0 .25vw;
+}
+.lb-table-note {
+  justify-self: end;
+  margin: 0 2vh;
+  text-align: right;
+  color: var(--gold);
+  font: 1.9vh var(--ui);
+}
+
 
 /* The card selector. */
 .lb-selector-shield {

@@ -1230,8 +1230,8 @@ pub fn ReadyButton() -> Element {
     }
 }
 
-/// Ready (Play while the table's game is running), Leave Table, and what the table is
-/// waiting for.
+/// What the table is waiting for, then Ready (Play while the table's game is running)
+/// and Leave Table.
 #[component]
 fn TableButtons(table: TableInfo) -> Element {
     let ctx = use_lobby();
@@ -1243,10 +1243,9 @@ fn TableButtons(table: TableInfo) -> Element {
         .and_then(|l| l.you.as_ref().map(|y| y.user.name.clone()));
     let note = waiting_for(&table, me.as_deref().unwrap_or_default());
     rsx! {
-        if let Some(note) = note {
-            p { class: "lb-table-note", role: "status", "{note}" }
-        }
         div { class: "lb-table-buttons",
+            // Always present: it holds the column left of the buttons.
+            p { class: "lb-table-note", role: "status", {note.unwrap_or_default()} }
             if let Some(game) = table.game.clone() {
                 button {
                     class: "lb-button lb-gold",
