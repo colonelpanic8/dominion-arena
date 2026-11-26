@@ -568,6 +568,8 @@ fn table_css(assets: &crate::assets::AssetDb, background: &str) -> String {
         ("villagers", "images/elements/villagers.png"),
         ("favors", "images/elements/favors.png"),
         ("vp", "images/elements/victory_150.png"),
+        ("vp-plain", "images/elements/victory_locontrast.png"),
+        ("resigned", "images/elements/resign-icon.png"),
         ("treasures", "images/buttons/autoplay-treasures.png"),
         ("refuse", "images/buttons/refuse.png"),
         ("continue", "images/buttons/continue.png"),

@@ -301,6 +301,20 @@ pub fn More(board: Rc<Board>) -> Element {
     }
 }
 
+/// Where dominion.games lists a card in a deck after the game: by cost ($, Potions,
+/// Debt), then name, landscapes last.
+fn deck_order(card: &str, cards: &crate::cards::CardDb) -> (bool, u32, u32, u32, String) {
+    let info = cards.get(card);
+    let cost = info.and_then(|c| c.cost).unwrap_or_default();
+    (
+        info.is_some_and(crate::card::is_landscape),
+        cost.coins,
+        cost.potions,
+        cost.debt,
+        card.to_string(),
+    )
+}
+
 /// Where a player's points come from: the cards worth a fixed amount, VP tokens, and the
 /// rest put on the cards whose worth varies.
 fn vp_sources(
@@ -437,62 +451,72 @@ pub fn GameOver(board: Rc<Board>) -> Element {
             }
             if focus_score() {
                 div { class: "lb-score-panel dt-score-panel",
-                if let Some(h) = headline {
-                        h1 { "{h}" }
+                    if let Some(h) = headline {
+                        div { class: "dt-score-label", "{h}" }
                     }
-                    if let Some(r) = &board.end_reason {
-                        p { class: "dt-note", "{r}" }
-                    }
-                    div { class: "dt-score-rows",
+                    div { class: "dt-score-summary",
                         for p in players.iter() {
-                            div { key: "{p.index}", class: "dt-score-row",
-                                span { class: "dt-rank", "{p.rank}" }
-                                span { class: "dt-score-name", "{p.name}" }
-                                span { class: "dt-score-line" }
-                                span { class: "dt-score-vp", "{p.vp}" }
-                                span { class: "dt-score-turns", "Turns: {p.turns}" }
-                                if p.resigned { span { class: "dt-note", " (resigned)" } }
+                            div { key: "{p.index}", class: "dt-fieldset-title dt-score-summary-row",
+                                div { class: "dt-score-rank", "{p.rank}" }
+                                div { class: "dt-score-title",
+                                    span { class: "dt-score-name", "{p.name}" }
+                                    div { class: "dt-score-sep" }
+                                }
+                                div { class: "dt-score-vp-box",
+                                    span { class: "dt-score-vp dt-score-total", "{p.vp}" }
+                                    div { class: "dt-score-sep" }
+                                }
+                                div { class: "dt-score-turns",
+                                    "Turns: {p.turns}"
+                                    div { class: if p.resigned { "dt-score-sep" } else { "dt-score-sep dt-score-sep-end" } }
+                                }
+                                if p.resigned {
+                                    div { class: "dt-score-resigned", title: "Resigned" }
+                                }
                             }
                         }
                     }
                     for p in players.iter() {
                         {
                             let entry = entries.iter().find(|e| e.seat == p.index);
-                            let owned = entry.map(|e| e.owned.known.clone()).unwrap_or_default();
+                            let mut owned = entry.map(|e| e.owned.known.clone()).unwrap_or_default();
                             let tokens = entry
                                 .and_then(|e| e.badges.iter().find(|b| b.kind == "vp"))
                                 .and_then(|b| b.count)
                                 .unwrap_or(0);
                             let sources = vp_sources(&owned, tokens, p.vp, &cards);
-                            let half = owned.len().div_ceil(2);
-                            let (left, right) = owned.split_at(half);
+                            owned.sort_by_key(|s| deck_order(&s.card, &cards));
                             rsx! {
-                                fieldset { key: "f{p.index}", class: "dt-score-box",
-                                    legend { "{p.name}" }
-                                    div { class: "dt-score-sources",
-                                        for (i, (card, n, vp)) in sources.iter().enumerate() {
-                                            div { key: "{i}", class: "dt-score-source",
-                                                if card.is_empty() {
-                                                    span { class: "dt-strip-n", "{n}" }
-                                                    span { class: "dt-strip-text", "VP tokens" }
-                                                } else if card == "Other" {
-                                                    span { class: "dt-strip-text", "Other" }
-                                                } else {
-                                                    div { class: "dt-strip",
-                                                        TableCard { name: card.clone(), size: CardSize::Micro, count: Some(*n) }
+                                div { key: "f{p.index}", class: "dt-score-content",
+                                    div { class: "dt-score-fieldset",
+                                        div { class: "dt-fieldset-title",
+                                            div { class: "dt-score-title", "{p.name}" }
+                                        }
+                                        div { class: "dt-score-fieldset-content",
+                                            div { class: "dt-score-breakdown",
+                                                for (i, (card, n, vp)) in sources.iter().enumerate() {
+                                                    div { key: "{i}", class: "dt-score-part",
+                                                        div { class: "dt-score-card",
+                                                            if card.is_empty() {
+                                                                span { class: "dt-strip-n", "{n}" }
+                                                                span { class: "dt-strip-text", "VP tokens" }
+                                                            } else if card == "Other" {
+                                                                span { class: "dt-strip-text", "Other" }
+                                                            } else {
+                                                                TableCard { name: card.clone(), size: CardSize::Micro, count: Some(*n) }
+                                                            }
+                                                        }
+                                                        div { class: "dt-score-gold" }
+                                                        span { class: "dt-score-vp", "{vp}" }
                                                     }
                                                 }
-                                                span { class: "dt-score-line" }
-                                                span { class: "dt-score-vp", "{vp}" }
                                             }
-                                        }
-                                    }
-                                    div { class: "dt-score-deck",
-                                        for col in [left, right] {
-                                            div { class: "dt-score-col",
-                                                for s in col.iter() {
-                                                    div { key: "{s.card}", class: "dt-strip",
-                                                        TableCard { name: s.card.clone(), size: CardSize::Micro, count: Some(s.count) }
+                                            div { class: "dt-score-deck",
+                                                for s in owned.iter() {
+                                                    div { key: "{s.card}", class: "dt-score-deck-part",
+                                                        div { class: "dt-score-card",
+                                                            TableCard { name: s.card.clone(), size: CardSize::Micro, count: Some(s.count) }
+                                                        }
                                                     }
                                                 }
                                             }
