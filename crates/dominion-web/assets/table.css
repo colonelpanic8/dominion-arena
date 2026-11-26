@@ -170,6 +170,12 @@ body:has(.dt-root) .topbar { display: none; }
 .dt-tokens .dt-badge { height: 20cqw; }
 .dt-tokens .dt-badge-n { font-size: 12cqw; }
 .dt-disc img { border-radius: 50%; box-shadow: 0 0 0 2px var(--pc); }
+/* A player's token on a pile, as dominion.games' token layer draws it: n = 0.2 of the
+   card's shorter side (a mini card is 0.943 times as tall as wide), a 1.2n slot each in
+   a centred row, the token n square in a 0.05n border, filled with its owner's colour. */
+.dt-mini .dt-tokens:has(> .dt-disc) { left: 8%; right: auto; width: 84%; top: 64%; height: 20%; flex-wrap: nowrap; align-items: center; gap: 0; }
+.dt-mini .dt-tokens > .dt-disc { flex: 0 1 22.63cqw; min-width: 0; height: 18.86cqw; align-items: flex-start; }
+.dt-mini .dt-tokens > .dt-disc img { position: absolute; left: 0; top: 0; width: 20.74cqw; height: 20.74cqw; box-sizing: border-box; border: 0.943cqw solid rgba(0, 0, 0, 0.4); border-radius: 20%; background: var(--pc); box-shadow: none; object-fit: cover; }
 .dt-b-trait { background: rgba(0, 0, 0, 0.7); border-radius: 3px; padding: 0 0.3em; font-size: calc(1.3 * var(--vh)); height: auto; }
 .dt-tokens .dt-b-trait { font-size: 8cqw; line-height: 1.15; }
 .dt-tokens:has(.dt-b-trait) { bottom: 3%; top: auto; flex-direction: column; align-items: center; gap: 1cqw; }

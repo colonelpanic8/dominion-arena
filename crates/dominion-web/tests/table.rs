@@ -206,10 +206,7 @@ fn check_player(e: &PlayerEntry, p: &PlayerView) {
         let v = &p.other_zones[&z.key];
         same_zone(&z.zone, v.count, &v.known, v.unknown);
     }
-    assert_eq!(
-        e.badges.len(),
-        token_count(&p.tokens) + p.adventure_tokens.len()
-    );
+    assert_eq!(e.badges.len(), token_count(&p.tokens));
     assert_eq!(
         (&e.projects, &e.states, &e.boons, &e.artifacts),
         (&p.projects, &p.states, &p.boons, &p.artifacts)

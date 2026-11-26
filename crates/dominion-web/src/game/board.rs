@@ -737,18 +737,7 @@ fn player_badges(p: &PlayerView) -> Vec<Badge> {
         };
         out.push(badge(kind, format!("Journey token face {side}"), None));
     }
-    for (token, pile) in &p.adventure_tokens {
-        out.push(Badge {
-            kind: token.clone(),
-            text: match pile {
-                Some(pile) => format!("{token} token on {pile}"),
-                None => format!("{token} token"),
-            },
-            count: None,
-            player: Some(p.index),
-            card: pile.clone(),
-        });
-    }
+    // Adventures tokens are drawn on their piles only, as dominion.games draws them.
     out
 }
 
