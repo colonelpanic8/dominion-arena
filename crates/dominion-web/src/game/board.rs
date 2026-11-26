@@ -53,6 +53,20 @@ pub struct Board {
 }
 
 impl Board {
+    /// What a card costs now where that differs from its printed cost, as the pile it is
+    /// on top of says: dominion.games draws cards in hand and play at their current cost.
+    pub fn changed_cost(&self, name: &str, cards: &CardDb) -> Option<Cost> {
+        let piles = (self.supply.basic.iter())
+            .chain(self.supply.kingdom.iter().flatten())
+            .chain(&self.non_supply);
+        let now = piles
+            .filter(|p| p.card == name)
+            .find_map(|p| p.cost.clone())?;
+        let printed = cards.get(name).and_then(|c| c.cost)?;
+        ((printed.coins, printed.potions, printed.debt) != (now.coins, now.potions, now.debt))
+            .then_some(now)
+    }
+
     /// The player drawn where the seat's own is: for someone watching, the first.
     pub fn front(&self) -> Option<&PlayerEntry> {
         self.you
@@ -274,8 +288,9 @@ pub struct PlayerEntry {
     pub states: Vec<String>,
     pub boons: Vec<String>,
     pub artifacts: Vec<String>,
-    /// The player's lasting effects by card, with how many each card has.
-    pub lasting: Vec<(String, u32)>,
+    /// What dominion.games reminds the player of beside their name, by card with how
+    /// many each has, in card order: lasting effects, kept Boons, States and Artifacts.
+    pub reminders: Vec<(String, u32)>,
     /// Every card the player owns, as far as known.
     pub owned: Zone,
     pub unlocated: Vec<Stack>,
@@ -289,7 +304,26 @@ pub struct PlayerEntry {
     pub rating: Option<SeatRating>,
 }
 
+/// The tokens dominion.games draws on a player's deck rather than their bar.
+pub const ON_DECK: [&str; 2] = ["-card", "-coin"];
+
 impl PlayerEntry {
+    /// The tokens drawn on the player's deck.
+    pub fn deck_tokens(&self) -> Vec<Badge> {
+        (self.badges.iter())
+            .filter(|b| ON_DECK.contains(&b.kind.as_str()))
+            .cloned()
+            .collect()
+    }
+
+    /// The tokens drawn on the player's bar.
+    pub fn bar_tokens(&self) -> Vec<Badge> {
+        (self.badges.iter())
+            .filter(|b| !ON_DECK.contains(&b.kind.as_str()))
+            .cloned()
+            .collect()
+    }
+
     /// The zones the player's cards are in, by the view's key and a label: the draw
     /// pile, discard pile, hand, cards in play, and each mat or set-aside zone holding
     /// cards.
@@ -704,17 +738,23 @@ fn player_badges(p: &PlayerView) -> Vec<Badge> {
             out.push(badge(kind, format!("{v} {label}"), Some(v as i32)));
         }
     };
-    n("coffers", "Coffers", t.coffers.into());
-    n("villagers", "Villager(s)", t.villagers.into());
-    n("favors", "Favor(s)", t.favors.into());
-    n("debt", "Debt", t.debt.into());
+    // dominion.games' order on a player's bar.
     n("vp", "VP token(s)", t.vp_tokens.into());
+    n("debt", "Debt", t.debt.into());
     n("pirate-ship", "Pirate Ship token(s)", t.pirate_ship.into());
-    if t.minus_card {
-        out.push(badge("-card", "-1 Card token".into(), None));
-    }
-    if t.minus_coin {
-        out.push(badge("-coin", "-$1 token".into(), None));
+    n("villagers", "Villager(s)", t.villagers.into());
+    n("coffers", "Coffers", t.coffers.into());
+    n("favors", "Favor(s)", t.favors.into());
+    for (on, kind, text) in [
+        (t.minus_card, "-card", "-1 Card token"),
+        (t.minus_coin, "-coin", "-$1 token"),
+    ] {
+        if on {
+            out.push(Badge {
+                player: Some(p.index),
+                ..badge(kind, text.into(), None)
+            });
+        }
     }
     if let Some(up) = t.journey_face_up {
         let (kind, side) = if up {
@@ -766,13 +806,20 @@ pub fn runs(cards: &[InPlay]) -> Vec<Stack> {
     out
 }
 
-/// A player's lasting effects by card, with how many each has, in dominion.games' order.
-fn lasting_reminders(view: &AgentView, seat: u8, cards: &CardDb) -> Vec<(String, u32)> {
+/// A player's reminders by card, with how many each has, in card order: their lasting
+/// effects, the Boons they keep (one reminder with the effect a Boon may have made), their
+/// States and the Artifacts they hold.
+fn reminders(view: &AgentView, p: &PlayerView, cards: &CardDb) -> Vec<(String, u32)> {
     let mut out: Vec<(String, u32)> = vec![];
-    for l in view.lasting.iter().filter(|l| l.owner == seat) {
+    for l in view.lasting.iter().filter(|l| l.owner == p.index) {
         match out.iter_mut().find(|(c, _)| *c == l.card) {
             Some((_, n)) => *n += 1,
             None => out.push((l.card.clone(), 1)),
+        }
+    }
+    for c in p.boons.iter().chain(&p.states).chain(&p.artifacts) {
+        if !out.iter().any(|(o, _)| o == c) {
+            out.push((c.clone(), 1));
         }
     }
     out.sort_by_key(|(c, _)| cards.order(c));
@@ -826,7 +873,7 @@ fn player_entry(
         states: p.states.clone(),
         boons: p.boons.clone(),
         artifacts: p.artifacts.clone(),
-        lasting: lasting_reminders(view, p.index, cards),
+        reminders: reminders(view, p, cards),
         owned: Zone {
             count: p.owned.known.values().sum::<u32>() + p.owned.unknown,
             known: stacks(&p.owned.known, cards),

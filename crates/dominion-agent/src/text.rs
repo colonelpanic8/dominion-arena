@@ -827,14 +827,17 @@ pub fn render(v: &AgentView) -> String {
     if let Some(phase) = &t.phase {
         status.push(format!("{phase} phase"));
     }
-    for (name, value) in [("actions", t.actions), ("buys", t.buys), ("coins", t.coins)] {
-        if let Some(n) = value {
-            status.push(format!("{name} {n}"));
+    // A finished game's view keeps its last turn's counters; they matter to nobody now.
+    if v.game.running {
+        for (name, value) in [("actions", t.actions), ("buys", t.buys), ("coins", t.coins)] {
+            if let Some(n) = value {
+                status.push(format!("{name} {n}"));
+            }
         }
-    }
-    for (name, value) in [("potions", t.potions), ("debt", t.debt)] {
-        if let Some(n) = value.filter(|&n| n > 0) {
-            status.push(format!("{name} {n}"));
+        for (name, value) in [("potions", t.potions), ("debt", t.debt)] {
+            if let Some(n) = value.filter(|&n| n > 0) {
+                status.push(format!("{name} {n}"));
+            }
         }
     }
     let over = if v.game.running { "" } else { " (over)" };

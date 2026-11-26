@@ -355,7 +355,7 @@ pub fn tone(d: &AgentDecision, t: &Target) -> &'static str {
         "trash" => "trash",
         "exile" => "exile",
         "reveal" => "reveal",
-        "reaction" => "react",
+        "reaction" | "trigger" => "react",
         "pass" => "pass",
         "name" => "name",
         "play" | "gain" | "turn" => "play",

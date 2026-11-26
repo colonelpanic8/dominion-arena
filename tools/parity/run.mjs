@@ -8,6 +8,7 @@ import { parseArgs } from 'node:util';
 import { Arena } from './arena.mjs';
 import { StaticCache, openTheirs, enterTheirs, openOurs } from './clients.mjs';
 import { Driver } from './drive.mjs';
+import { show } from './windows.mjs';
 import { extract, settle } from './extract.mjs';
 import { SCENARIOS } from './scenarios.mjs';
 import { WEIGHTS, compareCaptures, heatmap, ssim, total } from './score.mjs';
@@ -33,8 +34,11 @@ const { values: opts } = parseArgs({
   },
 });
 
-const [vw, vh] = opts.viewport.split('x').map(Number);
-const viewport = { width: vw, height: vh };
+const size = (s) => {
+  const [width, height] = s.split('x').map(Number);
+  return { width, height };
+};
+const viewport = size(opts.viewport);
 const scenarios = opts.only
   ? SCENARIOS.filter((s) => opts.only.split(',').includes(s.name))
   : SCENARIOS;
@@ -62,7 +66,7 @@ const IGNORE = {
   ours: { ignore: ['.dt-log-wrap', '.dt-below-log'], pixelsOnly: ['.dt-end', '.dt-btn', '.dt-tab'] },
 };
 
-async function capture(page, dir, side) {
+async function capture(page, dir, side, viewport) {
   // Over the log, where hovering opens nothing on the table.
   await page.mouse.move(viewport.width - 60, Math.round(viewport.height * 0.3));
   await page.evaluate(settle, { quiet: 1500, limit: 20000 });
@@ -85,16 +89,19 @@ async function runScenario(scenario) {
     log: path.join(dir, 'server.log'),
   });
   const contexts = [];
+  // A scenario may name its own viewport and players (in seat order).
+  const vp = scenario.viewport ? size(scenario.viewport) : viewport;
+  const players = (scenario.names ?? PLAYERS).slice(0, scenario.players ?? 2);
   try {
     const seats = {};
-    for (const name of PLAYERS.slice(0, scenario.players ?? 2)) seats[name] = await arena.register(name, PASSWORD);
+    for (const name of players) seats[name] = await arena.register(name, PASSWORD);
     const [alice, ...guests] = Object.values(seats);
     const game = await arena.startGame(alice, guests, scenario.spec);
     const driver = new Driver(arena, game, seats);
     await driver.init();
     await driver.run(scenario.steps);
 
-    const theirs = await openTheirs(browser, arena, cache, viewport);
+    const theirs = await openTheirs(browser, arena, cache, vp);
     contexts.push(theirs.context);
     const log = fs.createWriteStream(path.join(dir, 'theirs-console.log'));
     let loaded = false;
@@ -103,32 +110,43 @@ async function runScenario(scenario) {
       log.write(m.text() + '\n');
     });
     theirs.page.on('pageerror', (e) => log.write(`ERROR ${e.stack ?? e.message}\n`));
-    await enterTheirs(theirs.page, arena, 'Alice', PASSWORD);
+    await enterTheirs(theirs.page, arena, players[0], PASSWORD);
     for (let i = 0; i < 300 && !loaded; i++) await new Promise((r) => setTimeout(r, 100));
     if (!loaded) throw new Error(`their client never loaded the game; see ${dir}/theirs-console.log`);
 
-    const ours = await openOurs(browser, arena, alice, viewport);
+    const ours = await openOurs(browser, arena, alice, vp);
     contexts.push(ours.context);
     await ours.page.goto(`${arena.url}/game/${encodeURIComponent(game)}`);
     await ours.page.waitForSelector('.dt-root', { timeout: 30000 });
     // Our client opens a game on the starting cards; dominion.games goes straight in.
-    const start = await ours.page.$('.dt-start-game');
+    // It can appear a moment after the table does.
+    const start = await ours.page.waitForSelector('.dt-start-game', { timeout: 1500 }).catch(() => null);
     if (start) await start.click();
 
     // Steps played with both clients watching: the game's end, which their client
     // only shows to a seat that saw it happen.
     if (scenario.after) await driver.run(scenario.after);
+    // Clicks in both clients: a window opened, a card studied, cards picked.
+    if (scenario.show) {
+      await ours.page.evaluate(settle, { quiet: 1000, limit: 10000 });
+      await theirs.page.evaluate(settle, { quiet: 1000, limit: 10000 });
+      await show(ours.page, theirs.page, scenario.show);
+    }
 
-    const a = await capture(theirs.page, dir, 'theirs');
-    const b = await capture(ours.page, dir, 'ours');
+    const a = await capture(theirs.page, dir, 'theirs', vp);
+    const b = await capture(ours.page, dir, 'ours', vp);
     const anchors = compareCaptures(a.shown, b.shown);
     const pixels = ssim(a.png, b.png, [...a.shown.ignored, ...b.shown.ignored]);
     fs.writeFileSync(path.join(dir, 'diff.png'), heatmap(pixels));
     const parts = { images: anchors.images.score, texts: anchors.texts.score, pixels: pixels.score };
-    const result = { name: scenario.name, about: scenario.about, parts, score: total(parts), anchors };
+    const result = { name: scenario.name, about: scenario.about, viewport: vp, parts, score: total(parts), anchors };
     fs.writeFileSync(path.join(dir, 'result.json'), JSON.stringify(result, null, 1));
     return result;
   } catch (e) {
+    // What each client showed when it failed.
+    for (const [i, c] of contexts.entries()) {
+      for (const p of c.pages()) await p.screenshot({ path: path.join(dir, `error-${i}.png`) }).catch(() => {});
+    }
     return { name: scenario.name, about: scenario.about, error: String(e.stack ?? e), score: 0 };
   } finally {
     for (const c of contexts) await c.close();

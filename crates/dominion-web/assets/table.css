@@ -23,7 +23,7 @@ body:has(.dt-root) .topbar { display: none; }
   position: absolute;
   inset: 0;
   background:
-    var(--dt-bg, linear-gradient(180deg, #6e8fa6 0%, #8aa77e 45%, #4f6b3c 100%)) center / cover no-repeat;
+    var(--dt-bg, linear-gradient(180deg, #6e8fa6 0%, #8aa77e 45%, #4f6b3c 100%)) right center / cover no-repeat;
   z-index: 0;
 }
 .dt-loading-text { position: absolute; left: 40%; top: 45%; }
@@ -157,8 +157,9 @@ body:has(.dt-root) .topbar { display: none; }
 .dt-held-pile { position: absolute; pointer-events: none; }
 .dt-c:hover > .dt-inspect-pile, .dt-inspect-pile:focus-visible { opacity: 1; }
 .dt-order-n { position: absolute; top: 2%; right: 2%; min-width: 18cqw; padding: 1cqw; background: #6a5acd; color: #fff; font-family: var(--num); font-size: 12cqw; text-align: center; border-radius: 4px; }
-.dt-tokens { position: absolute; left: 0; right: 0; top: 60%; display: flex; flex-wrap: wrap; justify-content: center; gap: 2cqw; pointer-events: auto; }
-.dt-micro .dt-tokens { top: 0; bottom: 0; left: auto; right: 4%; align-items: center; }
+/* dominion.games' token-layer-tokens: a row 20% of the card high from 64% down. */
+.dt-tokens { position: absolute; left: 8%; right: 8%; top: 64%; height: 20%; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 4cqw; pointer-events: auto; }
+.dt-micro .dt-tokens { top: 0; bottom: 0; height: auto; left: auto; right: 4%; align-items: center; }
 .dt-label { position: absolute; left: 0; right: 0; bottom: -2.4em; text-align: center; font-size: calc(1.4 * var(--vh)); color: #ddd; text-shadow: 0 0 3px #000, 0 0 3px #000; white-space: nowrap; }
 .dt-cost-changed .dc-cost { filter: drop-shadow(0 0 3px #7f7); }
 
@@ -183,9 +184,11 @@ body:has(.dt-root) .topbar { display: none; }
   font: 9cqw/1 var(--num);
 }
 .dt-disc img { border-radius: 50%; box-shadow: 0 0 0 2px var(--pc); }
+.dt-colored { box-sizing: border-box; aspect-ratio: 1; background: var(--pc); border: 1px solid rgba(0, 0, 0, 0.4); border-radius: 20%; }
+.dt-colored img { width: 100%; height: 100%; object-fit: contain; }
 .dt-b-trait { background: rgba(0, 0, 0, 0.7); border-radius: 3px; padding: 0 0.3em; font-size: calc(1.3 * var(--vh)); height: auto; }
 .dt-tokens .dt-b-trait { font-size: 8cqw; line-height: 1.15; }
-.dt-tokens:has(.dt-b-trait) { bottom: 3%; top: auto; flex-direction: column; align-items: center; gap: 1cqw; }
+.dt-tokens:has(.dt-b-trait) { bottom: 3%; top: auto; height: auto; left: 0; right: 0; flex-direction: column; align-items: center; gap: 1cqw; }
 /* Landscape names run along the bottom of the card. */
 .dt-setup-set-aside.dt-wide .dt-tokens:has(.dt-b-trait) { top: 14%; bottom: auto; }
 
@@ -268,8 +271,10 @@ body:has(.dt-root) .topbar { display: none; }
   background: var(--dt-vp, none) center / contain no-repeat;
   text-shadow: 1px 1px 0 #000, -1px -1px 0 #000;
 }
-.dt-bar-bottom { display: flex; align-items: center; gap: calc(0.4 * var(--vh)); height: 50%; overflow: hidden; padding-left: calc(0.2 * var(--vh)); }
+/* dominion.games' player-info-counters: each item 0.2vh after the last. */
+.dt-bar-bottom { display: flex; align-items: center; gap: calc(0.2 * var(--vh)); height: 50%; overflow: hidden; padding-left: calc(0.3 * var(--vh)); }
 .dt-bar-cube img { height: calc(2.6 * var(--vh)); }
+.dt-bar-bottom .dt-badges { gap: calc(0.2 * var(--vh)); }
 /* dominion.games' player counters: the number 90% of the 2.6vh icon, outlined in black. */
 .dt-bar .dt-badge-n { font-size: calc(2.34 * var(--vh)); -webkit-text-stroke: calc(0.234 * var(--vh)) #000; paint-order: stroke fill; text-shadow: none; }
 .dt-bar-held { font-size: calc(1.4 * var(--vh)); white-space: nowrap; }
@@ -455,10 +460,9 @@ button.dt-bar-rating:hover { border-color: #f0cf7a; background: rgba(240, 207, 1
 .dt-btn-count { position: absolute; right: 0; bottom: 0; font-family: var(--num); font-size: calc(2.6 * var(--vh)); color: #fff; text-shadow: 0 0 3px #000, 0 0 3px #000; }
 .dt-btn > .dt-btn-count { position: static; }
 .dt-undo { font-size: calc(2.2 * var(--vh)); }
-.dt-ability { justify-content: flex-start; overflow: hidden; }
-.dt-ability-art { position: absolute; inset: 0; opacity: 0.55; pointer-events: none; }
-.dt-ability-art .dt-c { width: 100%; }
-.dt-ability .dt-btn-label { position: relative; text-align: left; align-items: flex-start; }
+.dt-ability { padding: 0; overflow: hidden; border-radius: 0; }
+.dt-ability-art { position: absolute; inset: 0; background-size: 100% auto; background-position: center 15%; pointer-events: none; }
+.dt-ability-name { position: absolute; left: 0; right: 0; top: 0; padding: calc(0.3 * var(--vh)) calc(1 * var(--vh)); background: rgba(0, 0, 0, 0.5); font-size: calc(2 * var(--vh)); text-align: left; white-space: nowrap; overflow: hidden; text-shadow: 1px 1px 0 #000; }
 .dt-slider { position: absolute; display: flex; gap: calc(1 * var(--vh)); align-items: center; padding: 0 calc(1 * var(--vh)); background: rgba(0, 0, 0, 0.8); z-index: 14000; box-sizing: border-box; }
 .dt-slider input { flex: 1; }
 .dt-slider .dt-slider-go { position: static; height: 80%; min-width: 30%; }
@@ -472,7 +476,7 @@ button.dt-bar-rating:hover { border-color: #f0cf7a; background: rgba(240, 207, 1
   border: calc(0.2 * var(--vh)) solid #eee;
   z-index: 13100;
 }
-.dt-window-title { position: absolute; left: calc(1 * var(--vh)); top: calc(1 * var(--vh)); font-family: var(--title); font-size: calc(2.6 * var(--vh)); }
+.dt-window-title { position: absolute; left: 0; right: 0; top: calc(0.6 * var(--vh)); font-family: var(--title); font-size: calc(3.6 * var(--vh)); text-align: center; text-shadow: 2px 2px 0 #000; pointer-events: none; }
 .dt-window-empty { position: absolute; left: 0; right: 0; top: 45%; text-align: center; color: #aaa; }
 .dt-note { color: #ccc; font-size: calc(1.6 * var(--vh)); margin: 0; }
 .dt-window > .dt-note { position: absolute; left: calc(1 * var(--vh)); bottom: calc(0.5 * var(--vh)); }
@@ -686,7 +690,6 @@ button.dt-bar-rating:hover { border-color: #f0cf7a; background: rgba(240, 207, 1
 @media (prefers-reduced-motion: reduce) {
   .dt-ghost { display: none; }
 }
-.dt-ability-art .dc-name, .dt-ability-art .dt-ov { display: none; }
 
 .dt-composition {
   position: absolute;

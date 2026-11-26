@@ -438,10 +438,17 @@ fn game_info(game: &Game, cx: &Context<'_>) -> GameInfo {
 }
 
 fn turn_view(game: &Game, v: &View<'_>, cx: &Context<'_>) -> TurnView {
-    if game.outcome().is_some() {
-        return TurnView::default();
-    }
     let t = v.turn();
+    if game.outcome().is_some() {
+        // What the last turn had left, as dominion.games still shows it; no turn goes on.
+        return TurnView {
+            actions: Some(t.actions),
+            buys: Some(t.buys),
+            coins: Some(t.coins),
+            potions: Some(t.potions),
+            ..TurnView::default()
+        };
+    }
     TurnView {
         number: Some(v.player(t.player).turns_taken()),
         player: Some(t.player.0),
