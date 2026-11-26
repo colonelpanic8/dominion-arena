@@ -61,7 +61,7 @@ pub fn badge_icon(kind: &str) -> Option<&'static str> {
         "villagers" => "images/elements/villagers.png",
         "favors" => "images/elements/favors.png",
         "debt" => "images/elements/debt_130.png",
-        "vp" => "images/elements/victory_150.png",
+        "vp" => "images/elements/victory_outlined.png",
         "pirate-ship" => "images/elements/pirate_130.png",
         "embargo" | "blockade" => "images/elements/embargo.png",
         "trade-route" | "tokens" => "images/elements/coin-token.png",
@@ -176,14 +176,15 @@ pub fn BadgeView(badge: Badge) -> Element {
     }
     let image = badge_icon(&b.kind).and_then(|p| assets.file_url(p));
     let owner = b.player.map(seat_class).unwrap_or_default();
-    let on_disc = b.player.is_some() && b.kind != "pirate-ship";
-    let count = b
-        .count
-        .filter(|_| !matches!(b.kind.as_str(), "-card" | "-coin"));
+    // dominion.games' `colored-token`: the picture on a square of the player's colour.
+    let colored = matches!(b.kind.as_str(), "-card" | "-coin");
+    let on_disc = b.player.is_some() && b.kind != "pirate-ship" && !colored;
+    let count = b.count.filter(|_| !colored);
     rsx! {
         span {
             class: "dt-badge dt-b-{b.kind} {owner}",
             class: if on_disc { "dt-disc" },
+            class: if colored { "dt-colored" },
             title: "{b.text}",
             "data-badge": "{b.kind}",
             if let Some(src) = image {
@@ -219,43 +220,23 @@ pub fn reminder_icon(name: &str) -> (String, Option<u8>) {
         "Twice Miserable" => ("Miserable", Some(2)),
         _ => (name, None),
     };
-    let dashed = name.to_lowercase().replace(' ', "-");
+    let dashed = name.to_lowercase().replace('\'', "").replace(' ', "-");
     (format!("images/reminders/{dashed}.png"), n)
 }
 
-/// A State or Artifact a player has, as dominion.games shows it beside their name: its
-/// reminder icon, or its name where the cache has none. Clicking studies the card.
+/// A reminder beside a player's name (a lasting effect, kept Boon, State or Artifact):
+/// its icon and how many there are, from 2. dominion.games has few of these icons and
+/// asks for one anyway, drawing only the number where it has none. Clicking studies the
+/// card.
 #[component]
-pub fn Reminder(name: String) -> Element {
-    let assets = use_assets();
+pub fn Reminder(name: String, count: u32) -> Element {
     let (path, n) = reminder_icon(&name);
-    let Some(src) = assets.file_url(&path) else {
-        return rsx! { span { class: "dt-bar-held", CardName { name } } };
-    };
-    rsx! { ReminderIcon { name, src, n: n.map(u32::from) } }
-}
-
-/// A lasting effect's reminder beside its player's name: its icon (dominion.games has
-/// few: most draw only how many there are, from 2) and the number of them.
-#[component]
-pub fn LastingReminder(name: String, count: u32) -> Element {
-    let assets = use_assets();
-    let (path, _) = reminder_icon(&name);
-    let src = assets.file_url(&path).unwrap_or_default();
-    let n = (count > 1).then_some(count);
-    rsx! { ReminderIcon { name, src, n } }
-}
-
-#[component]
-fn ReminderIcon(name: String, src: String, n: Option<u32>) -> Element {
+    let n = (count > 1).then_some(count).or(n.map(u32::from));
+    let src = crate::assets::url(&path);
     let ctx = use_table();
     let n1 = name.clone();
     let n2 = name.clone();
-    let style = if src.is_empty() {
-        String::new()
-    } else {
-        format!("background-image:url('{src}');")
-    };
+    let style = format!("background-image:url('{src}');");
     rsx! {
         span {
             class: "dt-reminder",
@@ -399,9 +380,9 @@ pub fn TableCard(
             (w.clone(), art)
         })
         .collect();
-    let (counters, badges): (Vec<Badge>, Vec<Badge>) = badges
-        .into_iter()
-        .partition(|b| counter_look(&b.kind).is_some() && b.player.is_none());
+    let (counters, badges): (Vec<Badge>, Vec<Badge>) = badges.into_iter().partition(|b| {
+        counter_look(&b.kind).is_some() && (b.player.is_none() || b.kind == "sinister-plot")
+    });
     // A counter is 0.3 of the card's shorter side; on a strip, 0.9 of its height.
     let counter_n = match size {
         CardSize::Micro => 90.0 * f64::from(crate::card::layout::MICRO_RATIO),
@@ -450,7 +431,8 @@ pub fn TableCard(
                     }
                 }
             }
-            if empty {
+            // dominion.games draws no art, and so no cross, on a strip.
+            if empty && size != CardSize::Micro {
                 div { class: "dt-empty-x",
                     if let Some(src) = red_cross.clone() {
                         img { src, alt: "", draggable: "false" }

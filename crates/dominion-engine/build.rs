@@ -222,6 +222,13 @@ fn main() {
                 format!("Types::from_bits_retain({})", ts.join(" | "))
             }
         };
+        let printed_types = c["types"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| format!("{:?}", t.as_str().unwrap()))
+            .collect::<Vec<_>>()
+            .join(", ");
         let plus = c.get("plus").cloned().unwrap_or(Value::Null);
         let pile = match c.get("pile").and_then(Value::as_str) {
             Some(p) => format!("Some(Card::{})", ident(p)),
@@ -252,7 +259,7 @@ fn main() {
         relations.push('}');
         writeln!(
             out,
-            "    CardDef {{ name: {name:?}, set: Set::{set}, cost: {cost}, variable_cost: {}, overpay: {}, types: {types_expr}, \
+            "    CardDef {{ name: {name:?}, set: Set::{set}, cost: {cost}, variable_cost: {}, overpay: {}, types: {types_expr}, printed_types: &[{printed_types}], \
              plus: Plus {{ cards: {}, actions: {}, buys: {}, coins: {}, villagers: {}, coffers: {}, favors: {} }}, \
              coins: {}, potions: {}, vp: {}, kingdom: {}, unimplemented: {}, basic: {}, removed: {}, pile: {pile}, related: {relations}, text: {:?} }},",
             flag(&cost_flags, "variable"),

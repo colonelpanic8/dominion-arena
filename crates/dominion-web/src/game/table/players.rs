@@ -4,7 +4,7 @@
 //! tabs for mats and set-aside cards.
 
 use super::layout::{Geometry, Rect};
-use super::pieces::{CardName, LastingReminder, Reminder, TableCard, cube_icon, seat_class};
+use super::pieces::{CardName, Reminder, TableCard, cube_icon, seat_class};
 use super::supply::{Badges, Tab};
 use super::{Composition, DecksView, Popup, Spot, Ui, mark_at, use_table};
 use crate::app::use_cards;
@@ -35,7 +35,6 @@ fn PlayerBar(player: PlayerEntry, at: Rect, you: bool, active: bool, cubes: usiz
     let assets = use_assets();
     let p = &player;
     let seat = p.seat;
-    let reminders: Vec<String> = p.states.iter().chain(&p.artifacts).cloned().collect();
     let cube = assets.file_url(&cube_icon(seat));
     let account = p.account.clone();
     let away = account.as_ref().is_some_and(|a| !a.connected);
@@ -94,15 +93,9 @@ fn PlayerBar(player: PlayerEntry, at: Rect, you: bool, active: bool, cubes: usiz
                         if let Some(src) = cube.clone() { img { src, alt: "", draggable: "false" } }
                     }
                 }
-                Badges { badges: p.badges.clone() }
-                for (c, n) in p.lasting.iter() {
-                    LastingReminder { key: "l{c}", name: c.clone(), count: *n }
-                }
-                for c in reminders.iter() {
-                    Reminder { key: "r{c}", name: c.clone() }
-                }
-                for c in p.boons.iter() {
-                    span { key: "h{c}", class: "dt-bar-held", CardName { name: c.clone() } }
+                Badges { badges: p.bar_tokens() }
+                for (c, n) in p.reminders.iter() {
+                    Reminder { key: "{c}", name: c.clone(), count: *n }
                 }
                 match (&p.rating, &account) {
                     (Some(rating), _) => rsx! {
@@ -266,6 +259,7 @@ fn PlayerTabs(player: PlayerEntry, g: Rc<Geometry>, you: bool, show_in_play: boo
 #[component]
 pub fn Opponents(board: Rc<Board>, g: Rc<Geometry>, active: Option<u8>) -> Element {
     let ctx = use_table();
+    let cards = use_cards();
     let b = &board;
     let them = active.and_then(|s| b.others().iter().find(|o| o.seat == s).cloned());
     rsx! {
@@ -305,6 +299,7 @@ pub fn Opponents(board: Rc<Board>, g: Rc<Geometry>, active: Option<u8>) -> Eleme
                     if o.discard.count > 0 {
                         TableCard {
                             name: o.discard_top.clone().unwrap_or_default(),
+                            cost: o.discard_top.as_deref().and_then(|c| b.changed_cost(c, &cards)),
                             size: CardSize::Full,
                             back: o.discard_top.is_none(),
                             inverted: true,
@@ -323,6 +318,7 @@ pub fn Opponents(board: Rc<Board>, g: Rc<Geometry>, active: Option<u8>) -> Eleme
                             back: true,
                             inverted: true,
                             count: Some(o.deck.count),
+                            badges: o.deck_tokens(),
                             at: g.opp_deck,
                             anchor: format!("deck:{}", o.seat),
                             opens: deck.clone(),
@@ -347,6 +343,7 @@ pub fn PlayArea(board: Rc<Board>, g: Rc<Geometry>, ui: Option<Rc<Ui>>, sel: Sele
     let Some(who) = pa.player.clone() else {
         return rsx! {};
     };
+    let cards = use_cards();
     let yours = board.you.as_ref().is_some_and(|y| y.seat == who.seat);
     let theirs = board.front().is_none_or(|f| f.seat != who.seat);
     let mut slots: Vec<Stack> = pa.order.clone();
@@ -410,6 +407,7 @@ pub fn PlayArea(board: Rc<Board>, g: Rc<Geometry>, ui: Option<Rc<Ui>>, sel: Sele
                             name: s.card.clone(),
                             size: CardSize::Full,
                             back: s.card.is_empty(),
+                            cost: board.changed_cost(&s.card, &cards),
                             count: (s.count > 1).then_some(s.count),
                             mark,
                             badges: slot_badges[i].clone(),
@@ -800,6 +798,7 @@ pub fn YourArea(board: Rc<Board>, g: Rc<Geometry>, ui: Option<Rc<Ui>>, sel: Sele
     let row = g.hand_row(slots.len());
     let hand_box = Rect::new(g.hand_x, g.hand_y, g.hand_right - g.hand_x, g.hand_h);
     let your_turn = board.play_area.player.as_ref().map(|w| w.seat) == Some(you.seat);
+    let cards = use_cards();
     let click_answers = ui.as_ref().is_some_and(|u| u.click_answers);
     let ctx = use_table();
     rsx! {
@@ -807,6 +806,7 @@ pub fn YourArea(board: Rc<Board>, g: Rc<Geometry>, ui: Option<Rc<Ui>>, sel: Sele
         if you.discard.count > 0 {
             TableCard {
                 name: you.discard_top.clone().unwrap_or_default(),
+                cost: you.discard_top.as_deref().and_then(|c| board.changed_cost(c, &cards)),
                 size: CardSize::Full,
                 back: you.discard_top.is_none(),
                 at: g.your_discard,
@@ -823,6 +823,7 @@ pub fn YourArea(board: Rc<Board>, g: Rc<Geometry>, ui: Option<Rc<Ui>>, sel: Sele
                 size: CardSize::Full,
                 back: true,
                 count: Some(you.deck.count),
+                badges: you.deck_tokens(),
                 at: g.your_deck,
                 anchor: format!("deck:{}", you.seat),
                 opens: deck.clone(),
@@ -856,6 +857,7 @@ pub fn YourArea(board: Rc<Board>, g: Rc<Geometry>, ui: Option<Rc<Ui>>, sel: Sele
                             name: s.card.clone(),
                             size: CardSize::Full,
                             back: *back,
+                            cost: board.changed_cost(&s.card, &cards),
                             count: (s.count > 1).then_some(s.count),
                             mark,
                             all,

@@ -437,6 +437,9 @@ fn Deck(label: &'static str, deck: CardDeck, at: Rect) -> Element {
 /// Badges in a row, for players.
 #[component]
 pub fn Badges(badges: Vec<crate::game::board::Badge>) -> Element {
+    if badges.is_empty() {
+        return rsx! {};
+    }
     rsx! {
         span { class: "dt-badges",
             for (i, b) in badges.iter().enumerate() {

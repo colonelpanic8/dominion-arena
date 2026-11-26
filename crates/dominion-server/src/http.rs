@@ -805,7 +805,7 @@ fn card_info(card: Card, online: &crate::online::OnlineCards) -> CardInfo {
     CardInfo {
         name: d.name.into(),
         set: d.set.to_string(),
-        types: card.type_names().into_iter().map(String::from).collect(),
+        types: d.printed_types.iter().copied().map(String::from).collect(),
         kind: kind_name(card.kind()).into(),
         cost: d.cost.map(|c| CardCost {
             coins: c.coins.into(),
