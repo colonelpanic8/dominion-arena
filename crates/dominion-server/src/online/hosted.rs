@@ -1012,6 +1012,7 @@ fn assign(
             rand::random::<u128>(),
             rand::random::<u128>()
         ),
+        attached: false,
     }));
     Ok(())
 }
@@ -1086,6 +1087,7 @@ async fn start_game(
                 seat: 0,
                 name: web.hosted.owner.clone(),
                 token: String::new(),
+                attached: false,
             }));
         }
         drop(reservation);

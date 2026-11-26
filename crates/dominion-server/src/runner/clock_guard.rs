@@ -592,6 +592,7 @@ mod tests {
             seat: 1,
             name: "P2".into(),
             token: created.seats[1].token.clone(),
+            attached: false,
         };
         let first = hub
             .claim(&created.game_id, &created.seats[0].token)

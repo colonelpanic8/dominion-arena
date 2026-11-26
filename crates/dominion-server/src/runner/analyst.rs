@@ -2,9 +2,13 @@
 mod background;
 mod board;
 use super::provider::{AnalysisModel, AnalysisPlan};
-use crate::harness::{game_state, has_decision, is_running};
+use crate::harness::{game_state, has_decision, is_clock_active, is_running};
 use crate::runner::strategy::ModelRunnerStrategy;
-use crate::{archive::Archive, client::Reply, house::Job};
+use crate::{
+    archive::Archive,
+    client::{Client, Reply},
+    house::Job,
+};
 use background::Position;
 pub(super) use board::opening_facts;
 use serde_json::Value;
@@ -21,11 +25,23 @@ struct Note {
     position: Option<Position>,
 }
 
+impl Note {
+    /// Who wrote it, as the seat's notes name them.
+    fn from(&self) -> &'static str {
+        match self.position {
+            None => "Opening analyst",
+            Some(_) => "Strategy analyst",
+        }
+    }
+}
+
 #[derive(Clone, Default)]
 pub(crate) struct Advice {
     pending: Arc<Mutex<Option<Note>>>,
     updates: Arc<OnceLock<(String, watch::Sender<Option<Position>>)>>,
     notices: crate::runner::clock_guard::Notices,
+    /// The seat's session: each note is kept with the seat's own, for whoever holds it.
+    seat: Option<Arc<Client>>,
 }
 
 impl Advice {
@@ -37,7 +53,25 @@ impl Advice {
         }
     }
 
+    /// Advice whose notes the seat `client` plays keeps too.
+    pub(crate) fn kept_by(mut self, client: Arc<Client>) -> Self {
+        self.seat = Some(client);
+        self
+    }
+
     fn publish(&self, note: Note) {
+        if let Some(client) = self.seat.clone() {
+            let args = serde_json::json!({"from": note.from(), "text": note.text});
+            let game = note.game.clone();
+            tokio::spawn(async move {
+                let refused = match client.call("note", args).await {
+                    Ok(reply) if reply.ok => return,
+                    Ok(reply) => reply.text,
+                    Err(e) => e.to_string(),
+                };
+                eprintln!("dominion agents: an analyst's note for {game} was not kept: {refused}");
+            });
+        }
         *self
             .pending
             .lock()
@@ -111,14 +145,15 @@ impl Advice {
         if note.position.is_some() && !background::strategic_decision(view) {
             return;
         }
-        if !available_time(json, crate::hub::now_ms())
-            .is_some_and(|(_, ms)| ms > crate::mcp::play::CLOCK_PRESSURE_MS)
+        if is_clock_active(json)
+            && !available_time(json, crate::hub::now_ms())
+                .is_some_and(|(_, ms)| ms > crate::mcp::play::CLOCK_PRESSURE_MS)
         {
             return;
         }
         let label = note.position.as_ref().map_or_else(
-            || "Opening analyst (initial kingdom)".to_string(),
-            |p| format!("Strategy analyst (turn {})", p.turn),
+            || format!("{} (initial kingdom)", note.from()),
+            |p| format!("{} (turn {})", note.from(), p.turn),
         );
         reply.text = format!("{label}: {}\n\n{}", note.text, reply.text);
         *slot = None;
@@ -147,7 +182,13 @@ pub(super) fn start(
     let (Some(config), Some(json)) = (plan, &reply.json) else {
         return false;
     };
-    if job.brief.is_some() || !job.options.strategy.timed_opening(json) {
+    // A person's seat is advised on any game, under the server's own brief; a model's
+    // own, where its clock runs and no creator gave it a plan.
+    let wanted = match job.attached {
+        true => is_running(json),
+        false => job.brief.is_none() && job.options.strategy.timed_opening(json),
+    };
+    if !wanted {
         return false;
     }
     let game = &game_state(json)["game"];

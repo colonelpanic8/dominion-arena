@@ -277,6 +277,14 @@ impl PlaySeat for ArenaSeat<'_> {
         (self.hub.play_treasures(&self.seat, decision)).map_err(|e| format!("REJECTED: {e}"))
     }
 
+    fn advise(&self, text: &str) -> Result<(), String> {
+        (self.hub.advise(&self.seat, text)).map_err(|e| format!("REFUSED: {e}"))
+    }
+
+    fn note(&self, from: &str, text: &str) -> Result<(), String> {
+        (self.hub.helper_note(&self.seat, from, text)).map_err(|e| format!("REFUSED: {e}"))
+    }
+
     fn no_game(&self) -> String {
         NO_GAME.into()
     }
@@ -381,6 +389,7 @@ impl Session {
         *self.joined() = Some(Seat {
             game: game.game_id.clone(),
             seat: PlayerId(game.seat),
+            model: false,
         });
         self.arena.cancel_search(ident);
         Some(game)
@@ -394,6 +403,7 @@ impl Session {
         let seat = Seat {
             game: game.game_id.clone(),
             seat: PlayerId(game.seat),
+            model: false,
         };
         let mut result = self.view_with_cards(&seat, Format::Text, true);
         let note = format!(
@@ -425,7 +435,9 @@ impl Session {
                 )
             }),
         }?;
-        self.hub.mark_remote_agent(&seat);
+        if !seat.model {
+            self.hub.mark_remote_agent(&seat);
+        }
         Ok(seat)
     }
 
@@ -559,6 +571,34 @@ impl Session {
             Err(e) => return Ok(e),
         };
         Ok(self.play(&seat).wait(p.timeout_s).await)
+    }
+
+    #[tool(
+        description = "dominion/play@1: for a seat a person holds while you advise them (results say ADVISING): write them a short note on what they asked or the decision shown, then wait like wait. Refused when you hold the seat yourself."
+    )]
+    async fn advise(
+        &self,
+        Parameters(p): Parameters<play::AdviseParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let seat = match self.play_seat(p.token.as_deref()) {
+            Ok(seat) => self.arena_seat(seat),
+            Err(e) => return Ok(e),
+        };
+        Ok(self.play(&seat).advise(&p.text, p.timeout_s).await)
+    }
+
+    #[tool(
+        description = "dominion/play@1: for a harness, not the seat's model: keeps a note from an analyst working beside the model (`from` names it) with the model's own, for whoever holds the seat. Returns no view."
+    )]
+    async fn note(
+        &self,
+        Parameters(p): Parameters<play::NoteParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let seat = match self.play_seat(p.token.as_deref()) {
+            Ok(seat) => self.arena_seat(seat),
+            Err(e) => return Ok(e),
+        };
+        Ok(self.play(&seat).note(&p.from, &p.text))
     }
 
     #[tool(
@@ -1363,6 +1403,7 @@ mod tests {
         let seat = Seat {
             game: game.game_id.clone(),
             seat: PlayerId(0),
+            model: false,
         };
         hub.forget_last_call(&seat);
         assert!(hub.seat_view(&seat, None).unwrap().meta.connected[0]);
@@ -1388,6 +1429,114 @@ mod tests {
         assert_eq!(
             text,
             "view failed inside the server (boom). This is a bug in the server"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_model_attached_to_a_seat_advises_its_player_and_answers_nothing() {
+        use crate::hub::{Meta, NewGame};
+        use dominion_protocol::api::{ModelAction, ModelRequest};
+        let hub = Arc::new(Hub::default());
+        let config = crate::hub::config(&NewGame {
+            players: 2,
+            kingdom: vec!["Village".into()],
+            seed: Some(1),
+            ..Default::default()
+        })
+        .unwrap();
+        let meta = Meta {
+            owners: vec![Some("ann".into()), Some("bo".into())],
+            ..Default::default()
+        };
+        let game = hub.host(config, vec!["Ann".into(), "Bo".into()], meta);
+        let game = game.unwrap();
+        let id = game.game_id.clone();
+        let person = (game.seats.iter())
+            .map(|s| hub.find(&s.token).unwrap())
+            .find(|s| hub.view(s).unwrap().0.decision.is_some())
+            .unwrap();
+        let who = ["ann", "bo"][person.seat.index()];
+        let model = ("u-astra".to_string(), "Astra".to_string());
+        hub.attach_model(&id, person.seat.0, who, model, Default::default())
+            .unwrap();
+        let token = Some(hub.attached().remove(0).0.token);
+        let arena = Arena::open(hub.clone(), Default::default()).unwrap();
+        let session = Session::new(arena, Duration::from_secs(60), false);
+        let text = |result: &CallToolResult| match result.content.first() {
+            Some(ContentBlock::Text(content)) => content.text.clone(),
+            _ => String::new(),
+        };
+
+        let params = play::StateParams {
+            token: token.clone(),
+        };
+        let state = session.state(Parameters(params)).await.unwrap();
+        assert!(
+            text(&state).contains("No note is wanted now"),
+            "{}",
+            text(&state)
+        );
+        let decision = hub.view(&person).unwrap().0.decision.unwrap();
+        let step = play::StepParams {
+            token: token.clone(),
+            decision: decision.id.clone(),
+            indices: Some(vec![i64::from(decision.options[0].index)]),
+            name: None,
+            expect: None,
+            timeout_s: Some(0),
+        };
+        let refused = session.step(Parameters(step)).await.unwrap();
+        assert_eq!(refused.is_error, Some(true));
+        assert!(text(&refused).contains("you are advising them"));
+        assert!(hub.meta(&id).unwrap().remote_agents.iter().all(|a| !a));
+        assert_eq!(
+            hub.view(&person).unwrap().0.decision.unwrap().id,
+            decision.id
+        );
+
+        let request = ModelRequest {
+            game: id.clone(),
+            seat: person.seat.0,
+            action: ModelAction::Request,
+        };
+        hub.model_action(&id, who, None, &request).unwrap();
+        let wait = play::WaitParams {
+            token: token.clone(),
+            timeout_s: Some(1),
+        };
+        let waited = session.wait(Parameters(wait)).await.unwrap();
+        assert!(text(&waited).contains("ADVICE WANTED"), "{}", text(&waited));
+        // An analyst beside the model writes with it, and settles nothing asked of it.
+        let note = play::NoteParams {
+            token: token.clone(),
+            from: "Opening analyst".into(),
+            text: "Open Militia.".into(),
+        };
+        let noted = session.note(Parameters(note)).await.unwrap();
+        assert_ne!(noted.is_error, Some(true), "{}", text(&noted));
+        let wait = play::WaitParams {
+            token: token.clone(),
+            timeout_s: Some(0),
+        };
+        let waited = session.wait(Parameters(wait)).await.unwrap();
+        assert!(text(&waited).contains("ADVICE WANTED"), "{}", text(&waited));
+        let advise = play::AdviseParams {
+            token,
+            text: "Village first.".into(),
+            timeout_s: Some(0),
+        };
+        let advised = session.advise(Parameters(advise)).await.unwrap();
+        assert!(text(&advised).contains("No note is wanted now"));
+        let seat = hub.model_seats(&id, who, None).unwrap().remove(0);
+        let notes: Vec<_> = (seat.notes.iter())
+            .map(|n| (n.from.as_deref(), n.text.as_str()))
+            .collect();
+        assert_eq!(
+            notes,
+            [
+                (Some("Opening analyst"), "Open Militia."),
+                (None, "Village first.")
+            ]
         );
     }
 }

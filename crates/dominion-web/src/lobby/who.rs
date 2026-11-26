@@ -29,6 +29,14 @@ pub fn Face(user: Option<UserRef>, played_by: Option<PlayedBy>, size: String) ->
 /// What played a seat, in a few words under its name: "Claude Code · High", "rook's bot".
 /// An agent whose seat isn't named after its model (an official account's) is named.
 pub fn caption(p: &PastPlayer) -> String {
+    let played = played_by(p);
+    match &p.model {
+        Some(model) => format!("{played} · with {model}"),
+        None => played,
+    }
+}
+
+fn played_by(p: &PastPlayer) -> String {
     match &p.played_by {
         PlayedBy::Person => "Registered".into(),
         PlayedBy::Guest => "Guest".into(),

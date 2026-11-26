@@ -288,6 +288,43 @@ fn seat_view(table: &Table, seat: PlayerId, log_from: Option<usize>, version: u6
 }
 
 #[test]
+fn the_view_offers_the_decision_whoever_holds_the_seat_leaves_the_page() {
+    use dominion_web::game::state::Hold;
+    let table = Table::new("g", config(&["Village"], 1), vec![]).unwrap();
+    let seat = table.deciding().unwrap();
+    let mut st = GameState::default();
+    st.apply(seat_view(&table, seat, Some(0), 4));
+    let served = st.view.as_ref().unwrap().decision.clone();
+    let decision = |st: &GameState| st.view.as_ref().unwrap().decision.clone();
+    assert!(served.is_some());
+
+    // Its model plays the seat: nothing is the page's to answer, until it is taken back.
+    st.set_hold(Hold::Model);
+    assert_eq!(decision(&st), None);
+    st.apply(seat_view(&table, seat, None, 5));
+    assert_eq!(decision(&st), None);
+    st.set_hold(Hold::Served);
+    assert_eq!(decision(&st), served);
+
+    // A seat watched and then held: the watcher's view has no decision, and gets the
+    // seat's own only as of the game it was read from.
+    let mut watched = seat_view(&table, seat, Some(0), 7);
+    (watched.view.decision, watched.view.spectating) = (None, true);
+    st.apply(watched);
+    let taken = |version| Hold::Taken {
+        decision: served.clone().map(Box::new),
+        version,
+    };
+    st.set_hold(taken(6));
+    assert_eq!(decision(&st), None);
+    st.set_hold(taken(7));
+    assert_eq!(decision(&st), served);
+    assert!(!st.view.as_ref().unwrap().spectating);
+    st.set_hold(Hold::Served);
+    assert!(decision(&st).is_none() && st.view.as_ref().unwrap().spectating);
+}
+
+#[test]
 fn a_whole_view_takes_the_place_of_a_rewritten_log_another_game_or_restarted_counters() {
     let table = Table::new("g", config(&["Village"], 1), vec![]).unwrap();
     let whole = |version, undos, texts: &[&str]| {

@@ -905,6 +905,14 @@ pub fn TableGame(controls: Element) -> Element {
                         g.play_right - g.play_x - 22.0 * g.vh,
                     ),
                 }
+                super::model::HeldNotice {
+                    style: format!(
+                        "left:{:.1}px;top:{:.1}px;width:{:.1}px;",
+                        g.play_x,
+                        g.play_y + g.vh,
+                        g.play_right - g.play_x - 22.0 * g.vh,
+                    ),
+                }
             }
             if let Some((p, _)) = ctx.popup.read().clone() {
                 PopupView { popup: p, g: g.clone(), board: b.clone() }
@@ -930,7 +938,7 @@ pub fn TableGame(controls: Element) -> Element {
                     sound::MuteToggle { muted }
                 }
                 side::More { board: b.clone() }
-                if game.offers.read().chat { super::chat::Chat {} }
+                super::model::Aside { heading: false }
             }
             if b.result.is_some() {
                 side::GameOver { board: b.clone() }

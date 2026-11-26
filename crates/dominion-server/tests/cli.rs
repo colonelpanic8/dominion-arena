@@ -164,6 +164,7 @@ fn seat(game: &Created, seat: usize) -> Seat {
     Seat {
         game: game.game_id.clone(),
         seat: dominion_engine::PlayerId(seat as u8),
+        model: false,
     }
 }
 

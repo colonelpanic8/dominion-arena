@@ -121,6 +121,7 @@ impl Board {
     pub fn with_meta(mut self, m: &GameMeta) -> Board {
         for p in self.you.iter_mut().chain(&mut self.opponents) {
             p.account = meta::account(m, p.seat);
+            p.model = m.models.get(usize::from(p.seat)).cloned().flatten();
             p.level = meta::level(m, p.seat);
             p.rating = meta::rating(m, p.seat);
         }
@@ -313,6 +314,8 @@ pub struct PlayerEntry {
     pub counters: Vec<(String, i64)>,
     /// The account playing the seat ([`Board::with_meta`]).
     pub account: Option<SeatAccount>,
+    /// The model attached to the player's seat, which everyone at the table is told of.
+    pub model: Option<dominion_protocol::lobby::SeatModel>,
     /// In a dominion.games game: the player's level there ([`Board::with_meta`]).
     pub level: Option<f64>,
     /// The player's rating in full, where the game says it ([`Board::with_meta`]).
@@ -924,6 +927,7 @@ fn player_entry(
             .collect(),
         counters: counters(&p.counters),
         account: None,
+        model: None,
         level: None,
         rating: None,
     }

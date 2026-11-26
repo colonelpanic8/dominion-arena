@@ -107,6 +107,8 @@ impl Arena {
                     level: None,
                     agent,
                     owner: bot_owner,
+                    model: (meta.model_controls.get(usize::from(p.index)))
+                        .and_then(|c| c.aided.clone()),
                 });
             }
             let record = GameRecord {
@@ -401,6 +403,7 @@ pub(super) fn past_game(record: GameRecord, venue: Venue, recall: Recall<'_>) ->
                     rating: p.rating,
                     level: p.level,
                     agent: p.agent,
+                    model: p.model,
                 }
             })
             .collect(),

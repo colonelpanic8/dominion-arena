@@ -89,7 +89,7 @@ pub(super) async fn run(
     use super::{analyst, provider::AnalysisModel};
     use crate::harness::JOINED_OVER;
     let (spec, sandbox, job, client) = (seat.spec, seat.sandbox, seat.job, seat.client.as_ref());
-    let advice = analyst::Advice::with_notices(seat.notices.clone());
+    let advice = analyst::Advice::with_notices(seat.notices.clone()).kept_by(seat.client.clone());
     let model = AnalysisModel::new(spec, sandbox);
     let (tool, args) = job.options.strategy.initial_tool(job);
     let joined = call(client, archive, "dominion", tool, args).await?;
@@ -289,6 +289,7 @@ mod tests {
             seat: 1,
             name: "P2".into(),
             token: created.seats[1].token.clone(),
+            attached: false,
         };
         hub.restore_model_host(&job.game_id, vec![false, true], "host".into())
             .unwrap();
@@ -297,7 +298,7 @@ mod tests {
             hub.model_action(
                 &job.game_id,
                 "host",
-                false,
+                Some(crate::model_control::Director::Host),
                 &ModelRequest {
                     game: job.game_id.clone(),
                     seat: 1,

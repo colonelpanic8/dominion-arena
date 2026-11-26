@@ -673,17 +673,19 @@ async fn every_change_reaches_event_subscribers() {
         .await
         .unwrap();
     assert!(reply.ok, "{}", reply.text);
-    assert_eq!(changes.next().await, 3);
+    // An agent's first call marks its seat as one: a change before its answer's.
+    assert_eq!(changes.next().await, 4);
     mcp.close().await;
 
     // A subscriber that joins late starts at the current version.
     let mut late = Changes::open(&server, id, &created.seats[0].token).await;
-    assert_eq!(late.next().await, 3);
+    assert_eq!(late.next().await, 4);
     let seat0 = Seat {
         game: id.clone(),
         seat: PlayerId(0),
+        model: false,
     };
-    assert_eq!(server.hub.seat_view(&seat0, None).unwrap().version, 3);
+    assert_eq!(server.hub.seat_view(&seat0, None).unwrap().version, 4);
 }
 
 #[tokio::test]

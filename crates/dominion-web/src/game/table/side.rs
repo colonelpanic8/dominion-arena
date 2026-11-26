@@ -194,6 +194,7 @@ fn extra_count(b: &Board) -> usize {
         + b.notes.len()
         + b.counters.len()
         + b.players().map(|p| p.counters.len()).sum::<usize>()
+        + b.opponents.iter().filter(|p| p.model.is_some()).count()
         + b.uncertain.len()
         + b.you.as_ref().map_or(0, |y| y.uncertain.len())
         + usize::from(b.boons.is_some())
@@ -248,6 +249,15 @@ pub fn More(board: Rc<Board>) -> Element {
                             span { class: "dt-pc {seat_class(e.player.seat)}", "{e.player.name}" }
                             " from "
                             CardName { name: e.source.clone() }
+                        }
+                    }
+                    // Its own player knows: the others are told.
+                    for p in b.opponents.iter() {
+                        if let Some(m) = &p.model {
+                            li { key: "m{p.seat}", "data-seat-model": "{p.seat}",
+                                span { class: "dt-pc {seat_class(p.seat)}", "{p.name}" }
+                                if m.playing { " has handed the seat to {m.agent}" } else { " plays with {m.agent} reading along" }
+                            }
                         }
                     }
                     for (i, note) in b.notes.iter().enumerate() {

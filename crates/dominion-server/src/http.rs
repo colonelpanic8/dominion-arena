@@ -912,16 +912,23 @@ fn query<T>(query: Queried<T>) -> Result<T> {
     Ok(query)
 }
 
-fn model_access(api: &Api, id: &str, headers: &HeaderMap) -> Result<(Ident, bool)> {
+/// Who asks about game `id`'s models, and their standing toward the models' own seats:
+/// an admin's, the host's, or none (they direct only a model attached to their own seat).
+fn model_access(
+    api: &Api,
+    id: &str,
+    headers: &HeaderMap,
+) -> Result<(Ident, Option<crate::model_control::Director>)> {
+    use crate::model_control::Director;
     let ident = api.signed_in(headers)?;
     let (_, admin) = api.arena.model_director(&ident)?;
-    if !admin && api.hub.meta(id)?.host.as_deref() != Some(&ident.user) {
-        return Err(Error::new(
-            StatusCode::FORBIDDEN,
-            "Only the game host and admins can direct its models",
-        ));
-    }
-    Ok((ident, admin))
+    let host = api.hub.meta(id)?.host.as_deref() == Some(&ident.user);
+    let standing = match (admin, host) {
+        (true, _) => Some(Director::Admin),
+        (false, true) => Some(Director::Host),
+        (false, false) => None,
+    };
+    Ok((ident, standing))
 }
 
 async fn model_seats(
@@ -929,11 +936,8 @@ async fn model_seats(
     Path(id): Path<String>,
     headers: HeaderMap,
 ) -> Json<Vec<dominion_protocol::api::ModelSeat>> {
-    let (who, admin) = model_access(&api, &id, &headers)?;
-    Ok(axum::Json(
-        api.hub
-            .model_seats(&id, admin.then_some(who.user.as_str()))?,
-    ))
+    let (who, standing) = model_access(&api, &id, &headers)?;
+    Ok(axum::Json(api.hub.model_seats(&id, &who.user, standing)?))
 }
 
 async fn model_action(
@@ -942,19 +946,20 @@ async fn model_action(
     headers: HeaderMap,
     bytes: Bytes,
 ) -> Json<Vec<dominion_protocol::api::ModelSeat>> {
-    let (who, admin) = model_access(&api, &id, &headers)?;
-    let req = body(&bytes)?;
-    api.hub.model_action(&id, &who.user, admin, &req)?;
-    if matches!(
-        req.action,
-        dominion_protocol::api::ModelAction::Take | dominion_protocol::api::ModelAction::Release
-    ) {
-        api.arena.dispatch();
+    use dominion_protocol::api::{ModelAction, ModelRequest};
+    let (who, standing) = model_access(&api, &id, &headers)?;
+    let req: ModelRequest = body(&bytes)?;
+    match &req.action {
+        ModelAction::Attach { agent, options } => {
+            let (arena, who, id, agent) =
+                (api.arena.clone(), who.clone(), id.clone(), agent.clone());
+            let (seat, options) = (req.seat, *options);
+            blocking(move || arena.attach_model(&who, &id, seat, &agent, options)).await?;
+        }
+        ModelAction::Detach => api.arena.detach_model(&who, &id, req.seat)?,
+        _ => api.hub.model_action(&id, &who.user, standing, &req)?,
     }
-    Ok(axum::Json(
-        api.hub
-            .model_seats(&id, admin.then_some(who.user.as_str()))?,
-    ))
+    Ok(axum::Json(api.hub.model_seats(&id, &who.user, standing)?))
 }
 
 async fn view(

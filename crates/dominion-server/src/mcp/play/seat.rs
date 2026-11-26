@@ -36,6 +36,17 @@ pub(crate) trait PlaySeat {
         treasures_one_by_one(self, decision).await
     }
 
+    /// Keeps what the seat's model wrote for the person holding the seat.
+    fn advise(&self, _text: &str) -> Result<(), String> {
+        Err("REFUSED: nobody holds this seat for you to advise".into())
+    }
+
+    /// Keeps what `from`, an analyst working beside the seat's model, wrote for whoever
+    /// holds the seat.
+    fn note(&self, _from: &str, _text: &str) -> Result<(), String> {
+        Err("REFUSED: this seat keeps no notes".into())
+    }
+
     /// What a seat without a game is told to do: "call new_game ...".
     fn no_game(&self) -> String;
 }
@@ -402,6 +413,22 @@ impl<S: PlaySeat> Play<'_, S> {
         match self.seat.wait(timeout).await {
             Ok(()) => self.observation(false),
             Err(e) => self.failure(e),
+        }
+    }
+
+    /// Keeps the model's note for the person holding its seat, then waits like `wait`.
+    pub async fn advise(&self, text: &str, timeout_s: Option<u64>) -> CallToolResult {
+        match self.seat.advise(text) {
+            Ok(()) => self.wait(timeout_s).await,
+            Err(e) => self.failure(e),
+        }
+    }
+
+    /// Keeps an analyst's note beside the model's own. Shows the seat nothing.
+    pub fn note(&self, from: &str, text: &str) -> CallToolResult {
+        match self.seat.note(from, text) {
+            Ok(()) => CallToolResult::success(vec![ContentBlock::text("Noted.")]),
+            Err(e) => failure(e),
         }
     }
 

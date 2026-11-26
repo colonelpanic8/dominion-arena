@@ -330,6 +330,15 @@ pub(crate) struct PlayObservation {
     pub clock_info: Option<ClockInfo>,
     /// What people at the table have said, its last lines in order.
     pub chat: Vec<dominion_protocol::lobby::ChatMessage>,
+    /// The caller is the seat's model and a person holds the seat.
+    pub advising: Option<Advising>,
+}
+
+/// What a seat's model is told while a person holds the seat.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Advising {
+    /// It owes the person a note now.
+    pub wanted: bool,
 }
 
 fn current_entry(
@@ -489,11 +498,32 @@ impl std::fmt::Display for Unfit {
 }
 
 impl Hosted {
-    fn model_turn(&self, seat: PlayerId) -> Result<(), HubError> {
-        if let Some(control) = lock(&self.meta).model_controls.get(seat.index()) {
-            control.model_turn()?;
+    /// Whether `seat`'s caller may answer for it now: whoever holds the seat, of its
+    /// player and its model.
+    fn turn_of(&self, seat: &Seat) -> Result<(), HubError> {
+        let meta = lock(&self.meta);
+        let Some(control) = meta.model_controls.get(seat.seat.index()) else {
+            return Ok(());
+        };
+        if seat.model || control.attached.is_none() {
+            control.model_turn()
+        } else {
+            control.player_turn()
         }
-        Ok(())
+    }
+
+    /// Whether `seat`'s caller is its model, with a note owed to the person holding it.
+    fn advice_wanted(&self, table: &Table, seat: &Seat) -> bool {
+        let wanted = {
+            let meta = lock(&self.meta);
+            (meta.model_controls.get(seat.seat.index()))
+                .filter(|c| seat.model || c.attached.is_none())
+                .filter(|c| c.may_want_advice())
+                .cloned()
+        };
+        wanted.is_some_and(|control| {
+            control.wants_advice(&crate::model_control::Moment::of(&table.view(seat.seat)))
+        })
     }
 
     /// When the game last changed or a seat last used its token. A seat's `seen` counts
@@ -543,10 +573,21 @@ impl Hosted {
         }
     }
 
-    fn touch(&self, seat: PlayerId) {
-        if let Some(j) = self.joined.get(seat.index()) {
+    /// Whether the model attached to seat `i` holds it: it is then who plays the seat.
+    fn model_holds(&self, i: usize) -> bool {
+        (lock(&self.meta).model_controls.get(i))
+            .is_some_and(|c| c.attached.is_some() && c.controller.is_none())
+    }
+
+    /// Notes that `seat`'s player is here. A model attached to a person's seat is them
+    /// only while it holds the seat.
+    fn touch(&self, seat: &Seat) {
+        if seat.model && !self.model_holds(seat.seat.index()) {
+            return;
+        }
+        if let Some(j) = self.joined.get(seat.seat.index()) {
             j.store(true, Ordering::Relaxed);
-            self.seen[seat.index()].store(now_ms(), Ordering::Relaxed);
+            self.seen[seat.seat.index()].store(now_ms(), Ordering::Relaxed);
         }
     }
 
@@ -594,6 +635,8 @@ impl Hosted {
 pub struct Seat {
     pub game: String,
     pub seat: PlayerId,
+    /// Claimed with the token of the model attached to the seat, not the seat's own.
+    pub model: bool,
 }
 
 #[derive(Serialize)]
@@ -671,6 +714,7 @@ impl Index {
             let seat = Seat {
                 game: id.into(),
                 seat: PlayerId(i as u8),
+                model: false,
             };
             if let Some(Some(owner)) = lock(&hosted.meta).owners.get(i) {
                 self.owned
@@ -680,6 +724,16 @@ impl Index {
             }
             self.seats.insert(token.clone(), seat);
         }
+        for (i, control) in lock(&hosted.meta).model_controls.iter().enumerate() {
+            if let Some(model) = &control.attached {
+                let seat = Seat {
+                    game: id.into(),
+                    seat: PlayerId(i as u8),
+                    model: true,
+                };
+                self.seats.insert(model.token.clone(), seat);
+            }
+        }
         self.games.insert(id.into(), Arc::new(hosted));
     }
 
@@ -688,6 +742,7 @@ impl Index {
             for token in &game.tokens {
                 self.seats.remove(token);
             }
+            self.seats.retain(|_, seat| seat.game != id);
             for owner in lock(&game.meta).owners.iter().flatten() {
                 if let Some(seats) = self.owned.get_mut(owner) {
                     seats.retain(|s| s.game != id);
@@ -755,13 +810,17 @@ impl Default for Hub {
 /// Counts a call waiting on a game for a seat, until dropped.
 pub struct Connection {
     game: Arc<Hosted>,
-    seat: usize,
+    /// None: the model attached to a person's seat who holds it themselves, which isn't
+    /// them being there.
+    seat: Option<usize>,
 }
 
 impl Drop for Connection {
     fn drop(&mut self) {
-        self.game.seen[self.seat].store(now_ms(), Ordering::Relaxed);
-        self.game.streams[self.seat].fetch_sub(1, Ordering::Relaxed);
+        if let Some(seat) = self.seat {
+            self.game.seen[seat].store(now_ms(), Ordering::Relaxed);
+            self.game.streams[seat].fetch_sub(1, Ordering::Relaxed);
+        }
     }
 }
 
@@ -1696,6 +1755,7 @@ impl Hub {
             return Ok(Seat {
                 game: id.into(),
                 seat: PlayerId(seat as u8),
+                model: false,
             });
         };
         let seat = index
@@ -1704,7 +1764,7 @@ impl Hub {
             .filter(|seat| seat.game == id)
             .cloned()
             .ok_or_else(|| HubError::BadToken(id.into()))?;
-        game.touch(seat.seat);
+        game.touch(&seat);
         Ok(seat)
     }
 
@@ -1717,7 +1777,7 @@ impl Hub {
             .cloned()
             .ok_or_else(|| bad("unknown seat token".into()))?;
         if let Some(game) = index.games.get(&seat.game) {
-            game.touch(seat.seat);
+            game.touch(&seat);
         }
         Ok(seat)
     }
@@ -1725,7 +1785,7 @@ impl Hub {
     /// Notes that `seat` is being played now.
     pub fn touch(&self, seat: &Seat) {
         if let Ok(game) = self.game(&seat.game) {
-            game.touch(seat.seat);
+            game.touch(seat);
         }
     }
 
@@ -1746,6 +1806,7 @@ impl Hub {
             .map(|(i, _)| Seat {
                 game: id.into(),
                 seat: PlayerId(i as u8),
+                model: false,
             })
             .collect()
     }
@@ -2078,6 +2139,7 @@ impl Hub {
                 .into_iter()
                 .map(|entry| current_entry(table.game(), entry))
                 .collect();
+            let advising = self.advising(&game, &table, seat);
             PlayObservation {
                 prompts: lock(&game.meta)
                     .model_controls
@@ -2092,6 +2154,7 @@ impl Hub {
                 clock: None,
                 clock_info: None,
                 chat: Vec::new(),
+                advising,
             }
         })
         .map(|mut observation| {
@@ -2161,6 +2224,17 @@ impl Hub {
             ratings: vec![],
             online_ratings: vec![],
             now,
+            models: match meta.model_controls.iter().any(|c| c.attached.is_some()) {
+                true => (meta.model_controls.iter())
+                    .map(|c| {
+                        Some(dominion_protocol::lobby::SeatModel {
+                            agent: c.attached.as_ref()?.name.clone(),
+                            playing: c.controller.is_none(),
+                        })
+                    })
+                    .collect(),
+                false => vec![],
+            },
         };
         (shown, meta.owners.clone())
     }
@@ -2362,11 +2436,12 @@ impl Hub {
     /// there is one, the seat is connected.
     pub fn connect(&self, seat: &Seat) -> Result<Connection, HubError> {
         let game = self.read(&seat.game)?;
-        game.streams[seat.seat.index()].fetch_add(1, Ordering::Relaxed);
-        Ok(Connection {
-            game,
-            seat: seat.seat.index(),
-        })
+        let i = seat.seat.index();
+        let seat = (!seat.model || game.model_holds(i)).then_some(i);
+        if let Some(seat) = seat {
+            game.streams[seat].fetch_add(1, Ordering::Relaxed);
+        }
+        Ok(Connection { game, seat })
     }
 
     /// Ages `seat`'s last call past [`CONNECTED_MS`], so only a live connection counts.
@@ -2489,6 +2564,7 @@ impl Hub {
         let seat = Seat {
             game: id.into(),
             seat: flagged,
+            model: false,
         };
         self.resign(&seat, "timeout")?;
         Err(HubError::Conflict(format!(
@@ -2506,7 +2582,7 @@ impl Hub {
         self.in_time(&game, &seat.game)?;
         let (answered, ended) = {
             let mut table = lock(&game.table);
-            game.model_turn(seat.seat)?;
+            game.turn_of(seat)?;
             let (next, answered) = self.attempt(&table, &apply)?;
             let ended = self.changed(&game, &mut table, next, |_| {})?;
             self.answered(&game, &table, seat.seat);
@@ -2553,7 +2629,7 @@ impl Hub {
         self.in_time(&game, &seat.game)?;
         let ended = {
             let mut table = lock(&game.table);
-            game.model_turn(seat.seat)?;
+            game.turn_of(seat)?;
             if !self.may_undo(&game, &table) {
                 return Err(HubError::Forbidden(
                     "answers can't be taken back in this game".into(),
@@ -2629,7 +2705,7 @@ impl Hub {
         self.in_time(&game, &seat.game)?;
         let ended = {
             let mut table = lock(&game.table);
-            game.model_turn(seat.seat)?;
+            game.turn_of(seat)?;
             let allowed = self.may_undo(&game, &table);
             let mut undo = lock(&game.undo);
             if !undo.waits_for(seat.seat) {
@@ -2671,7 +2747,7 @@ impl Hub {
     pub fn cancel_undo(&self, seat: &Seat) -> Result<(), HubError> {
         let game = self.game(&seat.game)?;
         let _table = lock(&game.table);
-        game.model_turn(seat.seat)?;
+        game.turn_of(seat)?;
         let mut undo = lock(&game.undo);
         if !undo.request.as_ref().is_some_and(|r| r.by == seat.seat) {
             return Err(HubError::Conflict(
@@ -2691,7 +2767,7 @@ impl Hub {
         self.in_time(&game, &seat.game)?;
         let (played, ended) = {
             let mut table = lock(&game.table);
-            game.model_turn(seat.seat)?;
+            game.turn_of(seat)?;
             let (next, played) =
                 self.attempt(&table, |next| next.play_treasures(seat.seat, decision))?;
             let ended = self.changed(&game, &mut table, next, |_| {})?;
@@ -2710,7 +2786,7 @@ impl Hub {
         let ended = {
             let mut table = lock(&game.table);
             if cause == "resigned" {
-                game.model_turn(seat.seat)?;
+                game.turn_of(seat)?;
             }
             let (next, ()) = self.attempt(&table, |next| next.resign(seat.seat))?;
             let ended = self.changed(&game, &mut table, next, |meta| {
@@ -2765,6 +2841,7 @@ impl Hub {
                 let seat = |seat| Seat {
                     game: table.id().into(),
                     seat,
+                    model: false,
                 };
                 if let Some(flagged) = g.flagged(now) {
                     return Some((seat(flagged), "timeout"));
@@ -2976,7 +3053,7 @@ impl Hub {
         let game = self.game(&seat.game)?;
         self.in_time(&game, &seat.game)?;
         let mut table = lock(&game.table);
-        game.model_turn(seat.seat)?;
+        game.turn_of(seat)?;
         let seen = table
             .view(seat.seat)
             .since_last_decision
@@ -3015,7 +3092,7 @@ impl Hub {
     }
 
     /// Waits until `seat` must decide or the game is over, for at most `timeout`. Returns
-    /// whether it is so.
+    /// whether it is so. A model whose seat a person holds waits until it owes them a note.
     pub async fn wait(&self, seat: &Seat, timeout: Duration) -> Result<bool, HubError> {
         let game = self.game(&seat.game)?;
         let _connected = self.connect(seat)?;
@@ -3023,9 +3100,12 @@ impl Hub {
         let ready = || {
             let table = lock(&game.table);
             table.is_over()
-                || (game.model_turn(seat.seat).is_ok()
-                    && (table.deciding() == Some(seat.seat)
-                        || lock(&game.undo).waits_for(seat.seat)))
+                || match game.turn_of(seat) {
+                    Ok(()) => {
+                        table.deciding() == Some(seat.seat) || lock(&game.undo).waits_for(seat.seat)
+                    }
+                    Err(_) => game.advice_wanted(&table, seat),
+                }
         };
         let deadline = tokio::time::Instant::now() + timeout;
         loop {
@@ -3338,6 +3418,7 @@ mod shared_response_tests {
         let invalid = Seat {
             game: game.game_id,
             seat: PlayerId(9),
+            model: false,
         };
         assert!(matches!(
             hub.project_seat(&invalid, |_| ()),
@@ -3538,6 +3619,7 @@ mod recording_safety_tests {
             .map(|i| Seat {
                 game: "g1".into(),
                 seat: PlayerId(i as u8),
+                model: false,
             })
             .inspect(|s| assert!(hub.game(&s.game).is_ok()))
             .collect()

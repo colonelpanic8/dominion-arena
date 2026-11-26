@@ -59,6 +59,8 @@ pub struct GameCtx {
     /// The question before resigning is open.
     pub resigning: Signal<bool>,
     pub offers: Memo<Offers>,
+    /// The seats with a model at them, as the viewer may see them.
+    pub models: model::Models,
 }
 
 /// What a game's source has besides its views. The page draws only what is offered.
@@ -100,20 +102,33 @@ pub fn use_watched_game(
     let watching = use_memo(|| true);
     let deciding = use_memo(move || state.read().deciding);
     let resigning = use_signal(|| false);
+    let models = model::use_models(game, state, offers);
+    // Whoever holds the seat watched answers for it where it is drawn.
+    let answer = Callback::new(move |answer: Answer| {
+        let st = state.peek();
+        let seat = st.view.as_ref().and_then(|v| v.seat);
+        if let (Some(seat), state::Hold::Taken { .. }) = (seat, &st.hold) {
+            let mut answered = models.answered;
+            answered.set(Some(answer.decision.clone()));
+            let action = dominion_protocol::api::ModelAction::Answer { answer };
+            models.act.call((seat, action));
+        }
+    });
     use_context_provider(|| GameCtx {
         game,
         seat,
         watching,
         state,
         deciding,
-        submit: Callback::new(|_| {}),
-        submit_way: Callback::new(|_| {}),
+        submit: answer,
+        submit_way: Callback::new(move |(a, _): (Answer, String)| answer.call(a)),
         undo: Callback::new(|_| {}),
         answer_undo: Callback::new(|_| {}),
         cancel_undo: Callback::new(|_| {}),
         resign: Callback::new(|_| {}),
         resigning,
         offers,
+        models,
     })
 }
 
@@ -617,7 +632,8 @@ pub fn GameBar(title: String, table_on: Signal<bool>, children: Element) -> Elem
                 span { class: "muted", "data-watchers": "{watchers}", title: "People watching this game", "{watchers} watching" }
             }
             if running && let (Some(url), Some(me)) = (endpoint, me) {
-                model::ModelControls { key: "{url}-{game}-{me.user.name}", url, game, admin: me.admin }
+                model::ModelControls { key: "{url}-{game}-{me.user.name}",
+                    take: me.admin || !url.starts_with("/api/games/") }
             }
             ViewToggle { table_on }
             menu::GameMenu {}
@@ -644,6 +660,7 @@ pub fn GameShell(title: String, who: Element, extra: Element) -> Element {
             {bar}
             {extra}
             WaitingNotice {}
+            model::HeldNotice {}
             plain::PlainGame {}
             menu::ResignDialog {}
         }
@@ -690,13 +707,17 @@ pub fn GamePage(id: String) -> Element {
             model_controls: summary
                 .read()
                 .as_ref()
-                .filter(|g| g.running && (admin || agents || g.agents.iter().any(Option::is_some)))
+                .filter(|g| {
+                    let seated = seat.read().is_some() && !g.rated;
+                    g.running && (admin || agents || seated || g.agents.iter().any(Option::is_some))
+                })
                 .map(|_| format!("/api/games/{}/model", platform::encode(&game.read()))),
             chat: true,
             say: Some(Say::Arena),
             transcript: agents.then(|| game.read().clone()),
         }
     });
+    let models = model::use_models(game, state, offers);
     use_context_provider(|| GameCtx {
         game,
         seat,
@@ -723,6 +744,7 @@ pub fn GamePage(id: String) -> Element {
         }),
         resigning: Signal::new(false),
         offers,
+        models,
     });
 
     let take_token = move |token: String| {

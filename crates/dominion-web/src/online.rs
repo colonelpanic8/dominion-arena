@@ -130,6 +130,8 @@ pub fn OnlinePage(account: Option<String>) -> Element {
         }
     });
     let error = state.read().error.clone();
+    // Whoever holds the account's seat plays it here, on the table.
+    let holding = matches!(state.read().hold, crate::game::state::Hold::Taken { .. });
     let playing = (state.read().view.as_ref())
         .and_then(|v| v.you.as_ref())
         .map(|y| y.name.clone());
@@ -154,7 +156,11 @@ pub fn OnlinePage(account: Option<String>) -> Element {
             GameShell {
                 title: format!("dominion.games {}", game().rsplit(':').next().unwrap_or_default()),
                 who: rsx! {
-                    span { class: "watching-mark", "data-watching": "1", "watching" }
+                    if holding {
+                        span { class: "muted", "data-holding": "1", "playing" }
+                    } else {
+                        span { class: "watching-mark", "data-watching": "1", "watching" }
+                    }
                     if let Some(name) = playing {
                         span { class: "muted", "as {name}" }
                     }

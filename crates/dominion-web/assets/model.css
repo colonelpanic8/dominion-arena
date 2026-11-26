@@ -42,3 +42,27 @@ dialog.model-controls {
 }
 .model-hand { display: flex; flex-wrap: wrap; align-items: baseline; gap: .25rem .7rem; }
 .model-hand h3 { width: 100%; margin: 0; color: var(--text-soft); font: 600 .9rem var(--ui); }
+
+/* What the model wrote, in the dialog and in the pane beside the chat. */
+.model-notes { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; min-height: 3em; max-height: 14em; user-select: text; }
+.model-note { padding: .08em 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.model-note + .model-note { margin-top: .4em; }
+.model-note[data-fresh="old"], .model-note-none, .model-about { color: var(--text-muted); }
+.model-note-none, .model-about { margin: 0; }
+.model-note-when { color: var(--text-faint); font-size: .85em; font-weight: 700; }
+
+/* The pane beside the chat: the seat you share with a model. */
+.aside-tabs { display: flex; flex-wrap: wrap; gap: .4em; align-items: center; justify-content: space-between; margin-bottom: .6em; }
+.aside-tablist, .aside-seat { display: inline-flex; gap: .4em; align-items: center; }
+.aside-seat button.toggle { padding: .25em .8em; font-size: .9em; }
+.model-unread { margin-inline-start: .45em; padding: 0 .4em; border-radius: 1em; color: #000; background: var(--gold); font-size: .8em; font-weight: 700; }
+.model-pane { display: flex; flex-direction: column; gap: .5em; min-height: 0; }
+.model-row { display: flex; gap: .4em; align-items: center; }
+.model-row > button { flex: none; }
+/* A model, then its effort, speed and strategy where it has a choice of them. */
+.model-pick { flex-wrap: wrap; }
+.model-pane .model-pick select { flex: 1 1 6.5em; min-width: 6.5em; }
+.model-pane .model-pick select:first-child { flex: 2 1 9em; }
+.model-pick > button { margin-inline-start: auto; }
+.model-pane select { min-width: 0; flex: 1; }
+.model-pane .game-chat-input { box-sizing: border-box; }

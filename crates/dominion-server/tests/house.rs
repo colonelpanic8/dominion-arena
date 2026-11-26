@@ -68,6 +68,7 @@ fn end(arena: &Arena, game: &str) {
     let seat = dominion_server::hub::Seat {
         game: game.into(),
         seat: dominion_engine::PlayerId(0),
+        model: false,
     };
     arena.hub.resign(&seat, "resigned").unwrap();
 }
@@ -130,6 +131,61 @@ fn a_table_seats_an_agent_and_the_runner_is_told_its_seat_until_the_game_ends() 
     assert_eq!(jobs(&mut told), Some(vec![]));
     let profile = arena.profile("Claude Opus").unwrap();
     assert_eq!(profile.stats.games, 1);
+}
+
+/// A game `host` and `other` play at a table.
+fn game_between(arena: &Arena, host: &Ident, other: &Ident, rated: bool) -> String {
+    let spec = TableSpec {
+        rated,
+        ..TableSpec::default()
+    };
+    let table = arena.new_table(host, &NewTable { spec, seats: None });
+    let table = table.unwrap();
+    arena.join_table(other, &table.id, None).unwrap();
+    arena.ready(other, &table.id, true).unwrap();
+    arena.ready(host, &table.id, true).unwrap().game.unwrap()
+}
+
+#[test]
+fn a_player_attaches_an_agent_to_their_own_seat_and_the_runner_is_told_until_it_is_sent_away() {
+    let arena = arena(5);
+    let mut told = runner(&arena, &["Claude Opus"], 2);
+    let (ada, bo) = (register(&arena, "Ada"), register(&arena, "Bo"));
+    let rated = game_between(&arena, &ada, &bo, true);
+    let attach = |game: &str, who: &Ident, seat| {
+        arena.attach_model(who, game, seat, "Claude Opus", Default::default())
+    };
+    let seat = arena.hub.owned_in(&rated, &ada.user)[0].seat.0;
+    assert!(matches!(attach(&rated, &ada, seat), Err(Error::Hub(_))));
+    end(&arena, &rated);
+
+    let game = game_between(&arena, &ada, &bo, false);
+    let own = arena.hub.owned_in(&game, &ada.user).remove(0);
+    let seat = own.seat.0;
+    assert!(matches!(attach(&game, &bo, seat), Err(Error::Hub(_))));
+    attach(&game, &ada, seat).unwrap();
+    assert_eq!(arena.lobby(Some(&ada)).house.left, Some(4));
+    let jobs_now = jobs(&mut told).unwrap();
+    let [job] = jobs_now.as_slice() else {
+        panic!("{jobs_now:?}");
+    };
+    assert!(job.attached && !job.transcript && job.agent == "Claude Opus");
+    assert_eq!(
+        (job.game_id.as_str(), job.seat, job.name.as_str()),
+        (game.as_str(), seat, "Ada")
+    );
+    assert!(
+        job.brief
+            .as_ref()
+            .unwrap()
+            .contains("attached to Ada's seat")
+    );
+    let model = arena.hub.claim(&game, &job.token).unwrap();
+    assert!(model.model && !own.model && model.seat == own.seat);
+
+    arena.detach_model(&ada, &game, seat).unwrap();
+    assert_eq!(jobs(&mut told), Some(vec![]));
+    assert!(arena.hub.claim(&game, &job.token).is_err());
 }
 
 #[test]
@@ -609,6 +665,7 @@ fn a_rated_game_an_agent_abandons_is_recorded_voided_and_moves_no_rating() {
     let seat = dominion_server::hub::Seat {
         game: game.clone(),
         seat: dominion_engine::PlayerId(1),
+        model: false,
     };
     arena.hub.resign(&seat, "abandoned").unwrap();
     let with_voided = dominion_protocol::lobby::HistoryQuery {

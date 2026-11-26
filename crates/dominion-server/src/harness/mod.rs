@@ -393,6 +393,7 @@ mod tests {
             seat: 0,
             name: "a".into(),
             token: "t".into(),
+            attached: false,
         };
         let dir = tempfile::tempdir().unwrap();
         let mut archive = Archive::open(&dir.path().join("over")).unwrap();

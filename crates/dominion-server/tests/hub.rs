@@ -33,6 +33,7 @@ fn an_engine_panic_stays_in_its_game() {
     let nobody = Seat {
         game: broken.game_id.clone(),
         seat: PlayerId(9),
+        model: false,
     };
     let failed = hub.view(&nobody).map(|_| ());
     assert!(matches!(failed, Err(HubError::Engine(_))), "{failed:?}");
@@ -259,6 +260,7 @@ fn briefs_are_checked_and_shown_only_to_their_seat_until_the_game_is_over() {
     let seat = |s| Seat {
         game: id.clone(),
         seat: PlayerId(s),
+        model: false,
     };
     assert_eq!(hub.brief(&seat(0)).as_deref(), Some("Open Silver/Silver."));
     assert_eq!(hub.brief(&seat(1)), None);
@@ -303,6 +305,7 @@ fn a_server_agent_owes_its_debrief_until_it_gives_one() {
     let seat = |s| Seat {
         game: id.clone(),
         seat: PlayerId(s),
+        model: false,
     };
     assert!(!hub.debrief_pending(id, 0), "the game is still running");
     hub.resign(&seat(1), "resigned").unwrap();

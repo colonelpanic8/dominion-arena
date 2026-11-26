@@ -27,6 +27,25 @@ pub struct WaitParams {
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
+pub struct AdviseParams {
+    pub token: Option<String>,
+    /// The note, for the person holding your seat: at most 40 words.
+    pub text: String,
+    /// Seconds to wait afterwards (default 45, capped at 600 and the session's lifetime).
+    pub timeout_s: Option<u64>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct NoteParams {
+    pub token: Option<String>,
+    /// Who wrote it: "Opening analyst".
+    pub from: String,
+    pub text: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct StepParams {
     pub token: Option<String>,
     pub decision: String,
@@ -380,6 +399,19 @@ fn clock_line(view: &AgentView, clock: &ClockView) -> String {
 pub(crate) const GAMEPLAY_INSTRUCTION: &str =
     "GAMEPLAY INSTRUCTION from the person directing this seat:";
 
+/// What heads something said to a seat's model by the person holding the seat.
+const QUESTION: &str = "FROM THE PERSON PLAYING THIS SEAT:";
+/// What a seat's model is told while a person holds the seat.
+const ADVISING: &str = "ADVISING: a person holds this seat and answers its decisions; you answer \
+                        nothing. No note is wanted now: call wait (timeout_s 300).";
+const ADVICE_WANTED: &str = "ADVISING: a person holds this seat and answers its decisions; you \
+                             answer nothing. ADVICE WANTED now: call advise with a note of at \
+                             most 40 words, which is all their screen shows at once. Answer what they asked; else say what matters at \
+                             the decision shown (interactions among their cards and the \
+                             Kingdom that are easy to miss, what the others threaten, how \
+                             near the game's end is) and what you would do. Lead with the \
+                             point, name cards exactly, restate neither the hand nor the rules.";
+
 /// Request metadata controlling instructional clock text. Clock observations are always returned.
 pub(crate) const CLOCK_CUES_META: &str = "dominion.arena/clockCues";
 
@@ -457,6 +489,7 @@ impl Presentation {
             clock_info,
             chat,
             prompts,
+            advising,
         } = observation;
         let undos = *undos;
         if self.seat.as_ref() != Some(seat) {
@@ -564,11 +597,21 @@ impl Presentation {
         self.last_chat = chat.last().map(|m| m.seq).or(self.last_chat);
         for prompt in prompts.iter().skip(self.prompt_count) {
             text.push('\n');
-            text.push_str(GAMEPLAY_INSTRUCTION);
+            text.push_str(match advising {
+                Some(_) => QUESTION,
+                None => GAMEPLAY_INSTRUCTION,
+            });
             text.push('\n');
             text.push_str(prompt);
         }
         self.prompt_count = prompts.len();
+        if let Some(advising) = advising.filter(|_| view.game.running) {
+            text.push('\n');
+            text.push_str(match advising.wanted {
+                true => ADVICE_WANTED,
+                false => ADVISING,
+            });
+        }
         let rendered = dominion_agent::text::render(view);
         if let Some(index) = rendered.find("DECISION ") {
             if clock_cues && let Some(cue) = clock_cue(view, clock.as_ref(), clock_info.as_ref()) {
@@ -611,7 +654,7 @@ impl Presentation {
             }
         } else if view.spectating {
             text.push_str("\nSPECTATING: nothing to answer.");
-        } else if view.decision.is_none() {
+        } else if view.decision.is_none() && advising.is_none() {
             text.push_str("\nWAITING: no decision for you yet; call wait.");
         }
         self.previous = Some(text_view);
@@ -640,6 +683,7 @@ mod tests {
             Seat {
                 game: "test".into(),
                 seat: PlayerId(0),
+                model: false,
             },
             PlayObservation {
                 view,
@@ -651,8 +695,26 @@ mod tests {
                 clock_info: None,
                 chat: vec![],
                 prompts: vec![],
+                advising: None,
             },
         )
+    }
+
+    #[test]
+    fn a_model_whose_seat_a_person_holds_is_told_to_advise_not_to_answer() {
+        let (seat, mut observation) = observation();
+        observation.prompts = vec!["Is Village worth it here?".into()];
+        observation.advising = Some(crate::hub::Advising { wanted: false });
+        let mut shown = Presentation::default();
+        let (text, _) = shown.render(&seat, &observation, true, false);
+        assert!(text.contains(&format!("{QUESTION}\nIs Village worth it here?")));
+        assert!(text.contains("No note is wanted now") && text.contains("DECISION "));
+        observation.advising = Some(crate::hub::Advising { wanted: true });
+        let (text, _) = shown.render(&seat, &observation, false, false);
+        assert!(text.contains("ADVICE WANTED") && !text.contains(QUESTION));
+        observation.advising = None;
+        let (text, _) = shown.render(&seat, &observation, false, false);
+        assert!(!text.contains("ADVISING"));
     }
 
     #[test]
