@@ -1098,6 +1098,27 @@ fn the_bane_is_marked_and_traits_attach_to_their_pile() {
     );
 }
 
+#[test]
+fn the_black_market_deck_is_a_face_down_non_supply_pile_of_its_own_card() {
+    let catalog = catalog();
+    let mut kingdom = KINGDOM.to_vec();
+    kingdom[0] = Card::BlackMarket;
+    let game = Game::new(GameConfig::new(2, kingdom, 42)).unwrap();
+    let deck = game
+        .view(PlayerId(0))
+        .piles()
+        .find(|p| p.hidden() && p.card() == Card::BlackMarket)
+        .map(|p| p.size())
+        .unwrap();
+    let state = update(&game, 0, &catalog, 1).snapshot.state;
+    let name = catalog.named("Black Market Deck").unwrap();
+    let zone = state.zones.iter().find(|z| z.pile_name == name).unwrap();
+    assert_eq!(zone.kind, super::super::catalog::zone::NON_SUPPLY);
+    assert_eq!(zone.cards.len(), deck);
+    // Face down: no card of it is named.
+    assert!(zone.cards.iter().all(|&id| id == -1));
+}
+
 fn kingdom_with(cards: &[Card]) -> Vec<Card> {
     let mut kingdom = KINGDOM.to_vec();
     kingdom[..cards.len()].copy_from_slice(cards);

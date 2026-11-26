@@ -116,7 +116,7 @@ body:has(.dt-root) .topbar { display: none; }
 .dt-count.dt-gone { opacity: 0; }
 .dt-count img { position: absolute; inset: 0; width: 100%; height: 100%; }
 .dt-count span { position: relative; }
-.dt-micro .dt-count { width: auto; height: 100%; aspect-ratio: 1; font-size: 16cqw; }
+.dt-micro .dt-count { width: auto; min-width: 0; height: 100%; aspect-ratio: 1; font-size: 16cqw; }
 .dt-inverted .dt-count { top: auto; left: auto; bottom: 0; right: 0; }
 /* dominion.games' sign: a fifth of the card's shorter side, in its corner. */
 .dt-plus { position: absolute; right: 0; bottom: 0; height: min(20%, 20cqw); aspect-ratio: 1; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; pointer-events: none; }

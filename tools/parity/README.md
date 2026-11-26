@@ -83,9 +83,9 @@ Village)"). When their client looks wrong, fix the projection, not our client.
 - Steps play through Arena, so any card can be played on the way, but a scenario must
   stop at a question the transport maps (`GET /api/official/coverage`); scenarios stop at
   the turn player's Buy phase (`act`) or a move of their turn.
-- The transport refuses some state outright, so a scenario can't show it yet: the Black
-  Market deck, Inheritance's Estate token, more than one Trait on a pile, and Shelters
-  chosen at the table. When their client refuses a game, its console log
+- The transport refuses some state outright, so a scenario can't show it yet:
+  Inheritance's Estate token, more than one Trait on a pile, and Shelters chosen at the
+  table. When their client refuses a game, its console log
   (`theirs-console.log`) says why.
 - Their client joins each game already in progress, and some of what it draws then
   differs from a game it watched being played: it lays out a snapshot's cards before
