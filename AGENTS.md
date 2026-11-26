@@ -111,6 +111,11 @@ crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum), termin
                           change), each player's agent seats a day
   src/rating.rs           Glicko-2 (pure)
   src/limits.rs           token-bucket rate limits (pure)
+  src/model_control.rs    a seat a person and a model share (`ModelControl`): who holds it,
+                          the model attached to a person's seat, when it owes its holder a
+                          note (`Moment`, `wants_advice`) and the notes. The hub's side is
+                          `hub/model.rs`: `Seat::model` marks the attached model's own
+                          token, and `Hosted::turn_of` is the one gate on who may answer
   src/house.rs            the agent socket: the runner's messages and the server's end
   src/control.rs          the control socket: `dominion games` lists and retires hosted
                           games, voids finished rated games and drains official accounts
@@ -198,6 +203,9 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
   src/game/meta.rs        what `SeatView.meta` makes the page say: the account on a bar,
                           the deciding seat's time, how the game ended (pure)
   src/game/chat.rs        the game's chat (`game-<id>`): under the log, and on the plain page
+  src/game/model.rs       the Model panel (README "Sharing a seat with a model"): who holds a
+                          seat, attaching an agent to your own, its notes, asking it, handing
+                          the seat over and taking it back
   src/game/menu.rs        the game menu (Resign, Lobby) and the question before resigning
   src/game/undo.rs        the undo request waiting: withdraw yours, allow or refuse another's
   src/game/replay.rs      `/game/<id>/replay`: a finished game on the table at any answer, stepped

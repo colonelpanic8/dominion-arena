@@ -57,6 +57,7 @@ fn play_out(arena: &Arena, game: &str) {
         let seat = Seat {
             game: game.into(),
             seat: dominion_engine::PlayerId(deciding),
+            model: false,
         };
         let d = hub.view(&seat).unwrap().0.decision.unwrap();
         let min = d.min.unwrap_or(1).max(1) as usize;
@@ -836,6 +837,7 @@ fn answer_first(arena: &Arena, game: &str) -> Seat {
     let seat = Seat {
         game: game.into(),
         seat: dominion_engine::PlayerId(summary.deciding.unwrap()),
+        model: false,
     };
     let d = arena.hub.view(&seat).unwrap().0.decision.unwrap();
     let min = d.min.unwrap_or(1).max(1) as usize;
@@ -915,6 +917,7 @@ fn an_automatch_undo_waits_for_the_opponent_to_allow_it() {
     let other = Seat {
         game: game.clone(),
         seat: PlayerId(1 - seat.seat.0),
+        model: false,
     };
     let view = |s: &Seat| arena.hub.seat_view(s, None).unwrap();
     assert_eq!(view(&seat).undo.rule, UndoRule::Ask);

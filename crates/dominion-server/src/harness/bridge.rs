@@ -12,10 +12,11 @@ use tokio::sync::{mpsc, oneshot};
 
 /// The dominion/play@1 tools a seat is offered. The legacy ones (view, answer, ...) return
 /// the raw JSON view as their text, so they're left out.
-pub const TOOLS: [&str; 7] = [
+pub const TOOLS: [&str; 8] = [
     "state",
     "step",
     "wait",
+    "advise",
     "cards",
     "log",
     "turns",

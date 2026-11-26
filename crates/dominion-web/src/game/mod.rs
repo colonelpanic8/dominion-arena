@@ -594,6 +594,15 @@ pub fn ViewToggle(table_on: Signal<bool>) -> Element {
     }
 }
 
+/// The seat shown, when it is account `name`'s own in a game a model may help with: one
+/// that isn't rated.
+fn own_seat(ctx: &GameCtx, name: &str) -> Option<u8> {
+    let seat = ctx.seat.read().as_ref()?.seat;
+    let state = ctx.state.read();
+    let user = state.meta.users.get(usize::from(seat))?.as_ref()?;
+    (!state.meta.rated && user.name == name).then_some(seat)
+}
+
 /// The bar over every game: its title, whose view is shown (the children), how many
 /// watch, the view toggle and the menu.
 #[component]
@@ -617,7 +626,8 @@ pub fn GameBar(title: String, table_on: Signal<bool>, children: Element) -> Elem
                 span { class: "muted", "data-watchers": "{watchers}", title: "People watching this game", "{watchers} watching" }
             }
             if running && let (Some(url), Some(me)) = (endpoint, me) {
-                model::ModelControls { key: "{url}-{game}-{me.user.name}", url, game, admin: me.admin }
+                model::ModelControls { key: "{url}-{game}-{me.user.name}", url, game, admin: me.admin,
+                    mine: own_seat(&ctx, &me.user.name) }
             }
             ViewToggle { table_on }
             menu::GameMenu {}
@@ -690,7 +700,10 @@ pub fn GamePage(id: String) -> Element {
             model_controls: summary
                 .read()
                 .as_ref()
-                .filter(|g| g.running && (admin || agents || g.agents.iter().any(Option::is_some)))
+                .filter(|g| {
+                    let seated = seat.read().is_some() && !g.rated;
+                    g.running && (admin || agents || seated || g.agents.iter().any(Option::is_some))
+                })
                 .map(|_| format!("/api/games/{}/model", platform::encode(&game.read()))),
             chat: true,
             say: Some(Say::Arena),

@@ -19,6 +19,19 @@ pub type RunnerId = u64;
 
 const DAY_MS: u64 = 86_400_000;
 
+/// What an agent attached to a person's seat is told before anything else.
+const ATTACHED_BRIEF: &str = "You are attached to {player}'s seat. {player} is a person and \
+plays it: you see exactly what they see, and you do not answer its decisions. Follow what each \
+result tells you. While it says ADVISING, call wait (timeout_s 300) until it says ADVICE \
+WANTED; then call advise once with a short note for {player} and go back to wait. A note says \
+what matters at the decision shown: interactions between cards in their hand, in play and in \
+the Kingdom that are easy to miss, what the opponents threaten, how close the game is to \
+ending, and when asked or at a buy, what you would do and why in a sentence. Lead with the \
+point, name cards exactly, stay under 80 words, and never restate the hand or the rules. \
+Answer a question from {player} directly. If a result shows a DECISION without ADVISING, \
+{player} has handed you the seat: play it with step as your own until a result says ADVISING \
+again. Stop at GAME OVER.";
+
 #[derive(Default)]
 pub(super) struct House {
     runner: Option<Runner>,
@@ -378,8 +391,50 @@ impl Arena {
         Ok(created)
     }
 
+    /// Attaches the server's agent `agent` to `who`'s own seat `seat` of game `id`: they
+    /// go on playing it, and it counts as one of their agent seats for the day.
+    pub fn attach_model(
+        &self,
+        who: &super::Ident,
+        id: &str,
+        seat: u8,
+        agent: &str,
+        options: lobby::LaunchOptions,
+    ) -> Result<()> {
+        if who.agent {
+            return Err(Error::Forbidden("a bot plays its seat itself".into()));
+        }
+        if self.may_seat_agents(&self.user(&who.user)?) {
+            self.summon(agent)?;
+        }
+        let found = {
+            let state = lock(&self.state);
+            state.house.check_options(agent, options)?;
+            let program = (state.house.offer_named(agent))
+                .and_then(|o| Some(o.model.as_ref()?.program.as_str()));
+            // Its conversation answers decisions only: it has no way to write a note.
+            if program == Some(crate::runner::Program::T3Code.label()) {
+                return super::bad("a T3 Code agent can't be attached to a seat");
+            }
+            state.house.agent_named(agent).cloned().ok_or_else(|| {
+                Error::BadRequest(format!("the server's agent {agent:?} is unavailable"))
+            })?
+        };
+        let reservation = self.reserve(&who.user, 1)?;
+        (self.hub).attach_model(id, seat, &who.user, (found.user, found.name), options)?;
+        reservation.keep();
+        Ok(())
+    }
+
+    /// Sends away the model attached to `who`'s seat `seat` of game `id`.
+    pub fn detach_model(&self, who: &super::Ident, id: &str, seat: u8) -> Result<()> {
+        self.hub.detach_model(id, seat, &who.user)?;
+        self.dispatch();
+        Ok(())
+    }
+
     /// The jobs: every seat the runner's agents hold in a running game, or in a finished
-    /// one whose debrief they still owe.
+    /// one whose debrief they still owe, and every person's seat they are attached to.
     fn jobs(&self, agents: &[Agent], official: &BTreeMap<String, Job>) -> Vec<Job> {
         let mut jobs: Vec<Job> = (agents.iter())
             .flat_map(|agent| {
@@ -407,10 +462,30 @@ impl Arena {
                         seat: g.seat,
                         name: g.name,
                         token: g.token,
+                        attached: false,
                     }
                 })
             })
             .collect();
+        jobs.extend(self.hub.attached().into_iter().filter_map(|(g, model)| {
+            let agent = agents.iter().find(|a| a.user == model.user)?;
+            Some(Job {
+                options: model.options,
+                official: false,
+                official_account: None,
+                // It says what its player holds: nobody else reads it.
+                transcript: false,
+                configuration: self.hub.configuration(&g.game_id),
+                agent: agent.name.clone(),
+                brief: Some(ATTACHED_BRIEF.replace("{player}", &g.name)),
+                debrief: None,
+                game_id: g.game_id,
+                seat: g.seat,
+                name: g.name,
+                token: g.token,
+                attached: true,
+            })
+        }));
         jobs.extend(official.values().cloned());
         jobs.sort_by(|a, b| (&a.game_id, a.seat).cmp(&(&b.game_id, b.seat)));
         jobs
@@ -437,13 +512,7 @@ impl Arena {
                             })
                     })
             })
-            .filter(|j| {
-                if j.official {
-                    !j.game_id.is_empty()
-                } else {
-                    !self.hub.model_paused(&j.game_id, j.seat)
-                }
-            })
+            .filter(|j| !j.official || !j.game_id.is_empty())
             .collect();
         if runner.told.as_ref() != Some(&jobs) {
             let _ = runner.send.send(ToRunner::Jobs { jobs: jobs.clone() });

@@ -107,6 +107,10 @@ pub struct Job {
     /// The seat's name in the game.
     pub name: String,
     pub token: String,
+    /// The seat is a person's, who holds it: the agent is attached to it, writes for
+    /// them, and plays only while they hand it the seat. `token` is the agent's own.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub attached: bool,
 }
 
 /// Accepts runners on `path` until `stop`: owner and group may connect.

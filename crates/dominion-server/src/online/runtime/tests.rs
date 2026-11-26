@@ -2949,6 +2949,7 @@ async fn an_agent_seat_outlives_disconnects_and_restarts_and_only_the_owner_resi
         seat: view.seat.unwrap(),
         name: view.you.unwrap().name,
         token: "kept-token".into(),
+        attached: false,
     };
     let file = directory.path().join("agent-job.json");
     std::fs::write(&file, serde_json::to_vec(&kept).unwrap()).unwrap();

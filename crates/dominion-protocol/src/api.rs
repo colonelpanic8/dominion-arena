@@ -792,16 +792,65 @@ impl Default for OnlineStart {
     }
 }
 
-/// Live controls offered for one of the server's model seats.
+/// A seat with a model at it, as the caller may see it: a model's own seat, or a
+/// person's seat with a model attached. One of the two holds it: plays it.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelSeat {
     pub seat: u8,
     pub name: String,
+    /// A person holds the seat; else its model does.
     pub controlled: bool,
-    /// Visible only to the admin currently playing the seat.
+    /// The seat's hand and decision, for the admin holding a model's own seat.
     pub playing: Option<ModelHand>,
     pub prompts: Vec<String>,
+    /// The model attached to a person's seat.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent: Option<String>,
+    /// The seat is the caller's own, with a model attached.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub own: bool,
+    /// The caller holds the seat.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub holding: bool,
+    /// When the model writes about the holder's decisions unasked.
+    #[serde(default)]
+    pub advise: AdviseMode,
+    /// The holder asked for a note on their next decision, and it isn't written yet.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub requested: bool,
+    /// What the model wrote, oldest first: for whoever holds the seat, as it says what
+    /// the seat's player holds.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<ModelNote>,
+}
+
+/// When a model writes about the decisions of the person holding its seat.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AdviseMode {
+    /// Only when asked.
+    #[default]
+    Off,
+    /// Once a turn, when a buy is offered.
+    Buys,
+    /// At every decision.
+    Always,
+}
+
+/// What a model wrote for the person holding its seat.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelNote {
+    /// The decision it is about, if it is about one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub decision: Option<String>,
+    /// The turn it was written in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turn: Option<u32>,
+    pub text: String,
+    /// Milliseconds since the Unix epoch.
+    pub at: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -820,8 +869,28 @@ pub struct ModelRequest {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum ModelAction {
-    Prompt { text: String },
+    /// Something for the model to consider: a question, when a person holds the seat.
+    Prompt {
+        text: String,
+    },
+    /// Hold the seat: play it yourself.
     Take,
+    /// Hand the seat to its model.
     Release,
-    Answer { answer: Answer },
+    Answer {
+        answer: Answer,
+    },
+    /// Attach one of the server's agents to your own seat: you go on holding it.
+    Attach {
+        agent: String,
+        #[serde(default, flatten)]
+        options: crate::lobby::LaunchOptions,
+    },
+    /// Send away the model attached to your seat.
+    Detach,
+    Advise {
+        mode: AdviseMode,
+    },
+    /// Ask for a note on the next decision of the seat.
+    Request,
 }

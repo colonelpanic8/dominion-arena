@@ -602,6 +602,13 @@ async fn model_control_is_seat_scoped_and_fences_the_models_existing_session() {
         .await
         .error(StatusCode::FORBIDDEN);
     server.post(&url, Some(&host), prompt).await.ok();
+    let seen: Vec<dominion_protocol::api::ModelSeat> =
+        server.get(&url, Some(&outsider)).await.ok().json();
+    assert!(seen.is_empty());
+    // No runner offers an agent here: the request is read and reaches the arena.
+    let attach = json!({"game": id, "seat": 1, "action": {"type":"attach","agent":"Astra"}});
+    let refused = server.post(&url, Some(&outsider), attach).await;
+    assert!(refused.error(StatusCode::BAD_REQUEST).contains("Astra"));
     let observe = || client.call("state", json!({}));
     let shown = observe().await.unwrap();
     assert!(shown.text.contains("Save a buy for Village."));
@@ -635,7 +642,11 @@ async fn model_control_is_seat_scoped_and_fences_the_models_existing_session() {
         )
         .await
         .unwrap();
-    assert!(!stale.ok && stale.text.contains("admin"), "{}", stale.text);
+    assert!(
+        !stale.ok && stale.text.contains("A person is playing this seat"),
+        "{}",
+        stale.text
+    );
     let play = req(json!({"type":"answer","answer":answer}));
     server
         .post(&url, Some(&host), play.clone())

@@ -418,6 +418,9 @@ fn description(tool: &str) -> &'static str {
         "wait" => {
             "Wait without answering until your next decision, an undo request (answer_undo) or the game's end. WAITING means call it again."
         }
+        "advise" => {
+            "While results say ADVISING (a person holds your seat): write them a short note, then wait."
+        }
         "cards" => "Card text and current costs, by name.",
         "log" => "Reread log entries after a sequence number.",
         "turns" => {

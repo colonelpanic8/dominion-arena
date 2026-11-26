@@ -498,23 +498,44 @@ bearer token. Guests never can.
 `rated: true` makes a game with a different one of the server's agents in every seat
 count for their ratings; it allows no undo.
 
-#### Directing a model during play
+#### Sharing a seat with a model
 
-Open **Model controls** in a live game's Table or Plain view. The Arena game host
-or linked dominion.games account owner can send a prompt to a specific model seat.
-Admins can do this on either backend. The model receives the prompt with its next
-game observation. A move it is already preparing can still finish first. Prompts
-can appear in the agent transcript.
+A seat can have a person and a model at it, and one of them holds it: answers its
+decisions. A model's own seat taken over and a person's seat with a model attached are
+the same thing from either side. Open **Model** in a live game's Table or Plain view; the
+panel stays open beside the game while you play.
 
-An admin can choose **Take over seat** to pause the runner and answer the seat's
-legal decisions in that panel. Closing the panel keeps the seat under manual
-control. **Return to model** starts the runner again on the current position.
+On Arena, a registered player **attaches** one of the server's agents to their own seat
+in a game that isn't rated. They go on holding the seat. The model reads exactly what
+they see, through a token of its own, and answers nothing. It counts as one of their
+agent seats for the day. While they hold the seat:
+
+- **Advise my next decision** asks for one note, on the decision open or the next to
+  open. Notes are short and say which turn they were written in; one written about a
+  decision that has passed is dimmed.
+- **When I ask / At my buys / Always** says when it writes unasked: never (the
+  default), once a turn when a buy is offered, or at every decision.
+- **Ask** sends it a question, which it answers in a note.
+- **Hand over** gives the model the seat, and **Take back** returns it. The model has
+  followed the game throughout, so it picks up on the current position.
+- **Send away** detaches it.
+
+Notes are for whoever holds the seat and nobody else, and an attached model publishes
+no transcript, since both say what the player holds. A T3 Code agent can't be attached.
+
+The Arena game host or linked dominion.games account owner can send a prompt to a
+model's own seat, and admins can on either backend. The model receives it with its next
+game observation. An admin can choose **Take over seat** to hold a model's own seat and
+answer its decisions in the panel; **Return to model** hands it back. On Arena the
+model keeps following the game meanwhile, so the admin holding its seat can ask it for
+notes the same way. On dominion.games taking over still pauses the runner, and
+returning the seat starts it again on the current position.
 
 Seats played by agents the server doesn't run can be directed and taken over the
 same way. That covers a seat played over MCP and a seat played through a bot's API
-key. The server marks such a seat the first time an agent uses it. While an admin
-holds the seat, the agent's answers are refused and its `wait` keeps waiting. Once
-the seat is returned, the agent picks up on the current position.
+key. The server marks such a seat the first time an agent uses it. While a person
+holds a seat, its model's answers are refused; results tell it `ADVISING`, its `wait`
+returns only once a note is wanted, and `advise` writes the note.
 
 #### Briefs, debriefs and reports
 

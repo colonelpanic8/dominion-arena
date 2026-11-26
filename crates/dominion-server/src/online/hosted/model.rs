@@ -91,7 +91,7 @@ fn model_status(web: &Web, admin: Option<&str>) -> Vec<dominion_protocol::api::M
         Default::default()
     };
     vec![control.seat(
-        admin,
+        admin.unwrap_or_default(),
         seat,
         job.map(|j| j.agent).unwrap_or_else(|| model.agent.clone()),
         || view,
@@ -143,7 +143,11 @@ pub(super) async fn model_action(
             Default::default()
         }
     };
-    if let Err(e) = control.update(&who, admin, &req.action) {
+    let role = match admin {
+        true => crate::model_control::Director::Admin,
+        false => crate::model_control::Director::Host,
+    };
+    if let Err(e) = control.update(&who, role, &req.action) {
         return crate::http::Error::from(e).into_response();
     }
     match &req.action {
@@ -179,7 +183,7 @@ pub(super) async fn model_action(
             drop(reservation);
         }
         ModelAction::Take => web.set_job(None),
-        ModelAction::Prompt { .. } => {}
+        _ => {}
     }
     {
         let mut model = crate::hub::lock(&web.hosted.model);

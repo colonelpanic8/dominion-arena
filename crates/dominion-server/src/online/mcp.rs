@@ -78,6 +78,7 @@ impl PlaySeat for Session {
         let seat = Seat {
             game: view.game.id.clone().unwrap_or_default(),
             seat: dominion_engine::PlayerId(seat),
+            model: false,
         };
         let (clock, clock_info) = update.clock_now();
         let observation = PlayObservation {
@@ -93,6 +94,7 @@ impl PlaySeat for Session {
             clock,
             clock_info,
             chat: update.chat.lines,
+            advising: None,
             view,
         };
         Ok(Some((seat, observation)))
@@ -170,6 +172,12 @@ impl Session {
         Parameters(p): Parameters<crate::mcp::PlayTreasuresParams>,
     ) -> CallToolResult {
         self.play().play_treasures(&p.decision_id).await
+    }
+    #[tool(
+        description = "For a seat a person holds while you advise them (results say ADVISING): write them a short note, then wait. Token is ignored."
+    )]
+    async fn advise(&self, Parameters(p): Parameters<play::AdviseParams>) -> CallToolResult {
+        self.play().advise(&p.text, p.timeout_s).await
     }
     #[tool(description = "Official card text and current costs for named cards.")]
     async fn cards(&self, Parameters(p): Parameters<CardsParams>) -> CallToolResult {

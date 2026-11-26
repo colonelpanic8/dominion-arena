@@ -569,7 +569,7 @@ async fn keep_playing(
             archived = (archive.dir.file_name())
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_default();
-            if !job.official {
+            if !job.official && !job.attached {
                 let _ = report.send(FromRunner::Attempt {
                     game_id: job.game_id.clone(),
                     seat: job.seat,
@@ -614,7 +614,7 @@ async fn keep_playing(
         if stop.is_cancelled() {
             return;
         }
-        if !job.official && !archived.is_empty() {
+        if !job.official && !job.attached && !archived.is_empty() {
             let _ = report.send(FromRunner::Failed {
                 game_id: job.game_id.clone(),
                 seat: job.seat,

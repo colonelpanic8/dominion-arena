@@ -289,6 +289,7 @@ mod tests {
             seat: 1,
             name: "P2".into(),
             token: created.seats[1].token.clone(),
+            attached: false,
         };
         hub.restore_model_host(&job.game_id, vec![false, true], "host".into())
             .unwrap();
@@ -297,7 +298,7 @@ mod tests {
             hub.model_action(
                 &job.game_id,
                 "host",
-                false,
+                Some(crate::model_control::Director::Host),
                 &ModelRequest {
                     game: job.game_id.clone(),
                     seat: 1,

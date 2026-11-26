@@ -682,6 +682,7 @@ async fn every_change_reaches_event_subscribers() {
     let seat0 = Seat {
         game: id.clone(),
         seat: PlayerId(0),
+        model: false,
     };
     assert_eq!(server.hub.seat_view(&seat0, None).unwrap().version, 3);
 }
