@@ -466,10 +466,15 @@ fn draw(
         (size == CardSize::Full && shape.basic && art.is_none()).then(|| basic_symbol(info));
     let set_icon = (size == CardSize::Full)
         .then(|| {
-            assets.file_url(&format!(
-                "images/elements/{}-small.png",
-                set_slug(&info.set)
-            ))
+            let slug = set_slug(&info.set);
+            // dominion.games marks the cards second editions removed, but for Base's and
+            // Intrigue's, as "deprecated".
+            let slug = if info.removed && !matches!(slug.as_str(), "base" | "intrigue") {
+                "deprecated".to_string()
+            } else {
+                slug
+            };
+            assets.file_url(&format!("images/elements/{slug}-small.png"))
         })
         .flatten();
     let colors = layout::colors(info);
@@ -580,7 +585,7 @@ fn draw(
                 src,
                 loading: "lazy",
                 alt: "",
-                style: shape.set_icon().css(),
+                style: shape.set_icon().css_whole_px(),
             }
         }
     }
