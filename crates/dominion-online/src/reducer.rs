@@ -22,6 +22,7 @@ type Position = (
 const DRUID_BOONS: i32 = 20;
 const MOUSE_CARD: i32 = 22;
 const THE_BOX: i32 = 30;
+const SINISTER_PLOT: i32 = 13;
 
 /// A zone as a snapshot gives it: each card's identity and name where it shows them.
 struct Stock {
@@ -1171,6 +1172,27 @@ impl Reducer {
     fn notes(&self) -> Result<Vec<view::NoteView>> {
         let state = self.state()?;
         let mut notes = Vec::new();
+        for c in &state.counters {
+            if c.kind == SINISTER_PLOT
+                && c.is_visible
+                && let Ok(seat) = u8::try_from(c.owner)
+                && let Some(p) = state.players.get(usize::from(seat))
+                && p.bought_projects.iter().any(|&project| {
+                    self.catalog
+                        .card(project)
+                        .is_ok_and(|p| p.key == "SINISTER_PLOT")
+                })
+            {
+                notes.push(view::NoteView {
+                    setup: None,
+                    source: "Sinister Plot".into(),
+                    player: Some(seat),
+                    pile: None,
+                    card: None,
+                    count: c.value,
+                });
+            }
+        }
         for marker in &state.pile_markers {
             let zone = self.zone(marker.zone_index)?;
             let (source, setup) = match marker.kind {
@@ -1286,7 +1308,7 @@ impl Reducer {
         for c in &state.counters {
             let shown = match (c.owner >= 0, c.zone >= 0) {
                 _ if c.kind == BLOCKADE_TOKENS && c.zone >= 0 => true,
-                (true, _) => matches!(c.kind, 0..=8 | 12 | 15),
+                (true, _) => matches!(c.kind, 0..=8 | 12 | SINISTER_PLOT | 15),
                 (false, true) => matches!(c.kind, 6 | 7 | 9 | 10 | 18),
                 (false, false) => false,
             };

@@ -170,6 +170,18 @@ body:has(.dt-root) .topbar { display: none; }
 .dt-badge-text { font-size: calc(1.4 * var(--vh)); padding: 0 0.3em; background: rgba(0, 0, 0, 0.6); border-radius: 3px; }
 .dt-tokens .dt-badge { height: 20cqw; }
 .dt-tokens .dt-badge-n { font-size: 12cqw; }
+.dt-landscape .dt-tokens:has(.dt-b-sinister-plot) { top: auto; bottom: 29%; align-items: center; }
+.dt-tokens .dt-b-sinister-plot {
+  width: 13cqw;
+  height: 13cqw;
+  box-sizing: border-box;
+  justify-content: center;
+  border: max(1px, 1cqw) solid var(--pc);
+  border-radius: 50%;
+  background: #191919;
+  color: #fff;
+  font: 9cqw/1 var(--num);
+}
 .dt-disc img { border-radius: 50%; box-shadow: 0 0 0 2px var(--pc); }
 .dt-b-trait { background: rgba(0, 0, 0, 0.7); border-radius: 3px; padding: 0 0.3em; font-size: calc(1.3 * var(--vh)); height: auto; }
 .dt-tokens .dt-b-trait { font-size: 8cqw; line-height: 1.15; }
