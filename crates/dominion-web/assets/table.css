@@ -259,8 +259,10 @@ body:has(.dt-root) .topbar { display: none; }
   background: var(--dt-vp, none) center / contain no-repeat;
   text-shadow: 1px 1px 0 #000, -1px -1px 0 #000;
 }
-.dt-bar-bottom { display: flex; align-items: center; gap: calc(0.4 * var(--vh)); height: 50%; overflow: hidden; padding-left: calc(0.2 * var(--vh)); }
+/* dominion.games' player-info-counters: each item 0.2vh after the last. */
+.dt-bar-bottom { display: flex; align-items: center; gap: calc(0.2 * var(--vh)); height: 50%; overflow: hidden; padding-left: calc(0.3 * var(--vh)); }
 .dt-bar-cube img { height: calc(2.6 * var(--vh)); }
+.dt-bar-bottom .dt-badges { gap: calc(0.2 * var(--vh)); }
 /* dominion.games' player counters: the number 90% of the 2.6vh icon, outlined in black. */
 .dt-bar .dt-badge-n { font-size: calc(2.34 * var(--vh)); -webkit-text-stroke: calc(0.234 * var(--vh)) #000; paint-order: stroke fill; text-shadow: none; }
 .dt-bar-held { font-size: calc(1.4 * var(--vh)); white-space: nowrap; }

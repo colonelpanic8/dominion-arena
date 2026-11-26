@@ -53,6 +53,20 @@ pub struct Board {
 }
 
 impl Board {
+    /// What a card costs now where that differs from its printed cost, as the pile it is
+    /// on top of says: dominion.games draws cards in hand and play at their current cost.
+    pub fn changed_cost(&self, name: &str, cards: &CardDb) -> Option<Cost> {
+        let piles = (self.supply.basic.iter())
+            .chain(self.supply.kingdom.iter().flatten())
+            .chain(&self.non_supply);
+        let now = piles
+            .filter(|p| p.card == name)
+            .find_map(|p| p.cost.clone())?;
+        let printed = cards.get(name).and_then(|c| c.cost)?;
+        ((printed.coins, printed.potions, printed.debt) != (now.coins, now.potions, now.debt))
+            .then_some(now)
+    }
+
     /// The player drawn where the seat's own is: for someone watching, the first.
     pub fn front(&self) -> Option<&PlayerEntry> {
         self.you

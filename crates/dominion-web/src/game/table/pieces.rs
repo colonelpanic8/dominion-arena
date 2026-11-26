@@ -431,7 +431,8 @@ pub fn TableCard(
                     }
                 }
             }
-            if empty {
+            // dominion.games draws no art, and so no cross, on a strip.
+            if empty && size != CardSize::Micro {
                 div { class: "dt-empty-x",
                     if let Some(src) = red_cross.clone() {
                         img { src, alt: "", draggable: "false" }
