@@ -1088,6 +1088,123 @@ export const SCENARIOS = [
     spec: { kingdom: ['Silk Road', 'Spice Merchant', 'Stables', 'Berserker', 'Cauldron', 'Stash', 'Merchant', 'Sea Hag', 'Tactician', 'Smugglers'] },
     steps: [],
   },
+  // Piles and the Supply, and cards of Prosperity, Cornucopia & Guilds, Empires, Allies
+  // and Dark Ages played (parity round 3).
+  {
+    name: 'cost-reducers',
+    about: 'costs lowered on the piles: Bridge, Highway and Quarry in play, Canal bought, Peddler in the Buy phase',
+    spec: {
+      kingdom: ['Bridge', 'Highway', 'Peddler', 'Quarry', 'Grand Market', 'Counting House', 'Mint', 'Venture', 'Loan', 'Investment'],
+      landscapes: ['Canal'],
+    },
+    steps: [buyEach(28, ['Canal', 'Bridge', 'Highway', 'Quarry', 'Venture', 'Loan', 'Investment'], ['Gold', 'Silver']), 'act'],
+  },
+  {
+    name: 'tax-debt',
+    about: "Tax's Debt on every Supply pile; Debt costs on piles and Events",
+    spec: {
+      kingdom: ['Capital', 'City Quarter', 'Royal Blacksmith', 'Overlord', 'Engineer', 'Charm', 'Crown', 'Groundskeeper', "Farmers' Market", 'Enchantress'],
+      landscapes: ['Tax', 'Annex', 'Donate', 'Wedding', 'Mountain Pass', 'Museum', 'Orchard', 'Palace'],
+    },
+    steps: [],
+  },
+  {
+    name: 'bane-ferryman',
+    about: "Young Witch's Bane and Ferryman's pile marked on their piles, Cornucopia & Guilds played",
+    spec: {
+      kingdom: ['Young Witch', 'Ferryman', 'Footpad', 'Fortune Teller', 'Herald', 'Horse Traders', 'Farming Village', 'Carnival', 'Shop', 'Journeyman'],
+    },
+    steps: [buyEach(28, ['Young Witch', 'Ferryman', 'Footpad', 'Fortune Teller', 'Herald', 'Horse Traders', 'Journeyman', 'Farming Village', 'Carnival', 'Shop'], ['Gold', 'Silver']), 'act'],
+  },
+  {
+    name: 'adventures-tokens',
+    about: "both players' Adventures tokens on piles: +1 Card, +1 Action, +$1, +1 Buy, -$2 cost, Trashing",
+    spec: {
+      kingdom: ['Market', 'Festival', 'Laboratory', 'Village', 'Smithy', 'Bazaar', 'Moat', 'Cellar', 'Workshop', 'Militia'],
+      landscapes: ['Pathfinding', 'Lost Arts', 'Training', 'Seaway', 'Ferry', 'Plan'],
+    },
+    steps: [
+      buyEach(28, ['Pathfinding', 'Lost Arts', 'Training', 'Seaway', 'Ferry', 'Plan'], ['Gold', 'Silver'], {
+        Pathfinding: 'Smithy',
+        'Lost Arts': 'Village',
+        Training: 'Festival',
+        Seaway: 'Workshop',
+        Ferry: 'Militia',
+        Plan: 'Cellar',
+      }),
+      'prefer',
+      'act',
+    ],
+  },
+  {
+    name: 'prosperity-play',
+    about: "Prosperity's Treasures and Attacks played: Talisman, Royal Seal, Contraband, Tiara, War Chest, Charlatan",
+    spec: {
+      kingdom: ['Talisman', 'Royal Seal', 'Contraband', 'Crystal Ball', 'Tiara', 'War Chest', 'Charlatan', 'Magnate', 'Vault', 'Clerk'],
+      colonies: true,
+    },
+    steps: [buyEach(28, ['Platinum', 'Tiara', 'Royal Seal', 'Crystal Ball', 'War Chest', 'Contraband', 'Talisman', 'Charlatan', 'Magnate', 'Vault', 'Clerk'], ['Gold', 'Silver']), 'act'],
+  },
+  {
+    name: 'empires-play',
+    about: "Empires played: Debt from Capital, Gathering VP on piles, Enchantress, Crown, Landmarks' VP; Debt costs on piles",
+    spec: {
+      kingdom: ['Capital', 'City Quarter', 'Royal Blacksmith', 'Charm', 'Crown', 'Groundskeeper', "Farmers' Market", 'Enchantress', 'Legionary', 'Sacrifice'],
+      landscapes: ['Baths', 'Colonnade', 'Advance', 'Banquet'],
+    },
+    steps: [buyEach(28, ['Capital', 'Enchantress', 'Legionary', 'Crown', 'Charm', "Farmers' Market", 'Groundskeeper', 'Sacrifice'], ['Gold', 'Silver']), 'act'],
+  },
+  {
+    name: 'dark-ages-play',
+    about: 'Dark Ages played: Band of Misfits, Counterfeit, Fortress, Altar, Armory, Count',
+    spec: {
+      kingdom: ['Altar', 'Armory', 'Band of Misfits', 'Catacombs', 'Count', 'Counterfeit', 'Fortress', 'Hunting Grounds', 'Ironmonger', 'Junk Dealer'],
+    },
+    steps: [buyEach(28, ['Altar', 'Hunting Grounds', 'Band of Misfits', 'Count', 'Counterfeit', 'Catacombs', 'Armory', 'Fortress', 'Ironmonger', 'Junk Dealer'], ['Gold', 'Silver']), 'act'],
+  },
+  {
+    name: 'dark-ages-play-2',
+    about: 'Dark Ages played: Mystic, Procession, Sage, Scavenger, Storeroom, Vagrant, Wandering Minstrel, Rogue',
+    spec: {
+      kingdom: ['Mystic', 'Poor House', 'Procession', 'Sage', 'Scavenger', 'Storeroom', 'Vagrant', 'Wandering Minstrel', 'Rogue', 'Market Square'],
+    },
+    steps: [buyEach(28, ['Rogue', 'Procession', 'Mystic', 'Wandering Minstrel', 'Market Square', 'Sage', 'Scavenger', 'Storeroom', 'Vagrant', 'Poor House'], ['Gold', 'Silver']), 'act'],
+  },
+  {
+    name: 'allies-play',
+    about: 'Allies played: Highwayman and Royal Galley in play, Barbarian, Capital City, Galleria, Innkeeper',
+    spec: {
+      kingdom: ['Barbarian', 'Capital City', 'Carpenter', 'Galleria', 'Highwayman', 'Hunter', 'Innkeeper', 'Marquis', 'Merchant Camp', 'Royal Galley'],
+      landscapes: ["Architects' Guild"],
+    },
+    steps: [buyEach(28, ['Highwayman', 'Royal Galley', 'Barbarian', 'Marquis', 'Galleria', 'Capital City', 'Hunter', 'Innkeeper', 'Carpenter', 'Merchant Camp'], ['Gold', 'Silver']), 'act'],
+  },
+  {
+    name: 'allies-liaisons',
+    about: 'Liaisons played for Favors: Broker, Emissary, Guildmaster, Contract; Sentinel, Skirmisher, Town',
+    spec: {
+      kingdom: ['Broker', 'Emissary', 'Guildmaster', 'Contract', 'Sentinel', 'Skirmisher', 'Specialist', 'Swap', 'Town', 'Modify'],
+      landscapes: ['Cave Dwellers'],
+    },
+    steps: [buyEach(28, ['Guildmaster', 'Contract', 'Emissary', 'Broker', 'Skirmisher', 'Specialist', 'Town', 'Sentinel', 'Swap', 'Modify'], ['Gold', 'Silver']), 'act'],
+  },
+  {
+    name: 'black-market',
+    about: 'the Black Market deck beside the Supply',
+    spec: {
+      kingdom: ['Black Market', 'Village', 'Smithy', 'Market', 'Moat', 'Militia', 'Cellar', 'Festival', 'Laboratory', 'Workshop'],
+    },
+    steps: [],
+  },
+  {
+    name: 'pile-of-one',
+    about: 'a Supply pile down to its last card, Omens taking Sun tokens off a Prophecy',
+    spec: {
+      kingdom: ['Rustic Village', 'Poet', 'Village', 'Smithy', 'Market', 'Workshop', 'Cellar', 'Festival', 'Laboratory', 'Moat'],
+      landscapes: ['Great Leader'],
+    },
+    steps: ['turns 6 Poet, Rustic Village, Silver', downToOne('Alice', 'Estate'), 'act'],
+  },
 ];
 
 // Plays until one `card` is left and Alice, in her Buy phase with her Treasures played,
@@ -1166,5 +1283,52 @@ function buyAsking(card, buys) {
       await d.turn(buys);
     }
     throw new Error(`buying ${card} never asked anything`);
+  };
+}
+
+function pileCount(view, card) {
+  return (view.supply ?? []).find((p) => p.card === card)?.count;
+}
+
+/// Turns until `who` starts one with one card left in `card`'s pile, which only they buy.
+function downToOne(who, card) {
+  return async (d) => {
+    for (let i = 0; i < 60; i++) {
+      const x = await d.deciding();
+      if (!x) throw new Error('downToOne: nobody is deciding');
+      const left = pileCount(x.view, card);
+      if (x.name === who && x.decision.kind === 'turn' && left === 1) return;
+      await d.turn(x.name === who && left > 1 ? [card, 'Silver'] : ['Silver']);
+    }
+    throw new Error(`downToOne: ${card} never ran down to 1`);
+  };
+}
+
+/// `n` turns, each buying the first of `once` it can that its player hasn't bought yet,
+/// else the first of `then`; what is asked after buying X picks `piles[X]` if it can.
+function buyEach(n, once, then, piles = {}) {
+  return async (d) => {
+    const bought = {};
+    const answer = d.answer.bind(d);
+    d.answer = async (dd, indices) => {
+      for (const i of indices) {
+        const o = (dd.decision.options ?? []).find((o) => o.index === i);
+        if (o && (o.action === 'buy' || o.action === 'buy-landscape')) {
+          (bought[dd.name] ??= new Set()).add(o.card);
+          d.prefer = piles[o.card] ? [piles[o.card]] : [];
+        }
+      }
+      return answer(dd, indices);
+    };
+    try {
+      for (let i = 0; i < n; i++) {
+        const dd = await d.deciding();
+        if (!dd) return;
+        const done = bought[dd.name] ?? new Set();
+        await d.turn([...once.filter((c) => !done.has(c)), ...then]);
+      }
+    } finally {
+      d.answer = answer;
+    }
   };
 }

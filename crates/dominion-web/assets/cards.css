@@ -212,8 +212,9 @@
 .dc-cost-box { z-index: 7; display: flex; align-items: center; }
 .dc-cost { display: inline-flex; align-items: center; height: 1em; transform: scale(1.15); transform-origin: 40% 50%; }
 .dc-cost .dc-i { vertical-align: 0; margin: 0; }
-.dc-cost .dc-coin { font-size: .72em; width: 1.39em; height: 1.39em; padding-top: .06em; }
-.dc-cost .dc-debt { font-size: .66em; width: 1.44em; height: 1.44em; padding-top: .04em; }
+/* dominion.games stretches its cost coin and Debt token to the card's own proportions. */
+.dc-cost .dc-coin { font-size: .72em; width: 1.329em; height: 1.45em; margin-left: .075em; padding-top: .14em; text-indent: -.15em; }
+.dc-cost .dc-debt { font-size: .66em; width: 1.449em; height: 1.584em; margin-left: .08em; padding-top: .12em; text-indent: -.15em; }
 .dc-cost .dc-potion { width: .65em; height: 1em; }
 .dc-cost > .dc-i + .dc-i { margin-left: -.15em; }
 

@@ -13,8 +13,10 @@ use crate::game::state::Selection;
 use dioxus::prelude::*;
 use std::rc::Rc;
 
+/// A Treasure pile; Curses stay with the Victory cards even when Charlatan makes them
+/// Treasures.
 fn is_treasure(p: &PileEntry) -> bool {
-    p.types.iter().any(|t| t == "Treasure")
+    p.types.iter().any(|t| t == "Treasure") && !p.types.iter().any(|t| t == "Curse")
 }
 
 /// The basic piles: Victory cards, Curses and the rest top to bottom, most expensive
@@ -66,13 +68,28 @@ pub enum Strip {
 
 pub fn strips(b: &Board) -> Vec<Strip> {
     let mut piles = b.non_supply.clone();
-    piles.sort_by(|a, b| b.printed.cmp(&a.printed).then_with(|| b.name.cmp(&a.name)));
+    sort_strips(&mut piles);
     let decks = [("Hexes", &b.hexes), ("Boons", &b.boons)];
     decks
         .into_iter()
         .filter_map(|(label, d)| Some(Strip::Deck(label, d.clone()?)))
         .chain(piles.into_iter().map(Strip::Pile))
         .collect()
+}
+
+/// Non-Supply piles most expensive first, then by name backwards.
+fn sort_strips(piles: &mut [PileEntry]) {
+    let key = |p: &PileEntry| match deck_title(p) {
+        Some(title) => ((0, 0, 0), title.to_string()),
+        None => (p.printed, p.name.clone()),
+    };
+    piles.sort_by_key(|p| std::cmp::Reverse(key(p)));
+}
+
+/// The Black Market deck is named after its Kingdom card; dominion.games has a card of
+/// its own for it, "Black Market Deck", costing $0.
+fn deck_title(p: &PileEntry) -> Option<&'static str> {
+    (p.hidden && p.name == "Black Market").then_some("Black Market Deck")
 }
 
 /// What a card set aside for `source` is drawn on: its pile or its landscape.
@@ -285,7 +302,6 @@ fn Pile(
         printed.is_some_and(|p| (p.coins, p.potions, p.debt) != (c.coins, c.potions, c.debt))
     });
     let mark = mark_at(&ui, &sel, Spot::Pile(pile.at));
-    let changed = cost.is_some();
     let inspect_pile = !pile.hidden && cards.pile_members(&pile.name).len() > 1;
     let split = pile.shadowed && size == CardSize::Mini;
     // Shrunk to leave the back room, as dominion.games does.
@@ -310,14 +326,15 @@ fn Pile(
             at,
             plus,
             split,
-            pile: pile_line(&pile, &cards),
+            // A strip prints neither (Ferryman's pile among them).
+            pile: (size == CardSize::Mini).then(|| pile_line(&pile, &cards)),
+            title: deck_title(&pile).map(str::to_string),
             attached: pile.attached.clone(),
             inspect_pile,
             class: format!(
-                "dt-pile{}{}{}",
+                "dt-pile{}{}",
                 if pile.kingdom { " dt-kpile" } else { "" },
                 if size == CardSize::Micro { " dt-nspile" } else { "" },
-                if changed { " dt-cost-changed" } else { "" },
             ),
         }
     }
@@ -446,5 +463,55 @@ pub fn Badges(badges: Vec<crate::game::board::Badge>) -> Element {
                 BadgeView { key: "{i}", badge: b.clone() }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::game::board::PileAt;
+
+    fn pile(name: &str, types: &[&str], printed: u32, hidden: bool) -> PileEntry {
+        PileEntry {
+            at: PileAt::NonSupply(0),
+            name: name.into(),
+            card: name.into(),
+            count: 1,
+            cost: None,
+            printed: (printed, 0, 0),
+            empty: false,
+            kingdom: false,
+            hidden,
+            types: types.iter().map(|t| t.to_string()).collect(),
+            badges: vec![],
+            markers: vec![],
+            attached: None,
+            shadowed: false,
+        }
+    }
+
+    #[test]
+    fn a_curse_made_a_treasure_stays_with_the_victory_piles() {
+        assert!(is_treasure(&pile("Silver", &["Treasure"], 3, false)));
+        assert!(!is_treasure(&pile(
+            "Curse",
+            &["Curse", "Treasure"],
+            0,
+            false
+        )));
+    }
+
+    #[test]
+    fn the_black_market_deck_sorts_as_dominion_games_card_for_it() {
+        let mut piles = vec![
+            pile("Black Market", &["Action"], 3, true),
+            pile("Imp", &["Action", "Spirit"], 2, false),
+            pile("Horse", &["Action"], 3, false),
+            pile("Wish", &["Action"], 0, false),
+            pile("Courser", &["Action", "Reward"], 0, false),
+        ];
+        sort_strips(&mut piles);
+        let names: Vec<_> = piles.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(names, ["Horse", "Imp", "Wish", "Courser", "Black Market"]);
     }
 }

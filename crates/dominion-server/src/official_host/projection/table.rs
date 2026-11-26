@@ -23,9 +23,6 @@ pub(super) fn validate(view: &View<'_>) -> Result<(), ProjectionError> {
         if p.traits().len() > 1 {
             return gap("more than one Trait on a pile".into());
         }
-        if p.hidden() && p.card() == Card::BlackMarket {
-            return gap("Black Market deck".into());
-        }
     }
     Ok(())
 }
@@ -40,6 +37,8 @@ fn shown(view: &View<'_>, note: &Note) -> bool {
     }
     match (note.source, note.setup) {
         (Card::Druid | Card::WayOfTheMouse | Card::Riverboat, Some(SetupRole::SetAside)) => true,
+        // What the Black Market deck holds: their client draws the deck as a pile.
+        (Card::BlackMarket, Some(SetupRole::Deck)) => true,
         (
             Card::TradeRoute
             | Card::SinisterPlot

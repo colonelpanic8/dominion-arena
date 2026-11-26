@@ -24,7 +24,7 @@ use crate::app::{Cards, Settings};
 use crate::assets::use_assets;
 use crate::platform;
 use dioxus::prelude::*;
-use dominion_protocol::{AgentDecision, Answer};
+use dominion_protocol::{AgentDecision, Answer, Cost};
 pub use model::Spot;
 pub use motion::{before_change, reset_motion};
 pub use pieces::seat_class;
@@ -196,6 +196,8 @@ pub struct TableCtx {
     pub decks_sort: Signal<DecksSort>,
     run: Signal<Option<Run>>,
     cards: Signal<Rc<crate::cards::CardDb>>,
+    /// What each card costs now ([`Board::current_costs`]).
+    pub costs: Memo<Rc<HashMap<String, Cost>>>,
     game: super::GameCtx,
 }
 
@@ -677,6 +679,15 @@ pub fn TableGame(controls: Element) -> Element {
             by_spot,
         }))
     });
+    let costs = use_memo(move || {
+        Rc::new(
+            board_memo
+                .read()
+                .as_ref()
+                .map(|b| b.current_costs())
+                .unwrap_or_default(),
+        )
+    });
     let ctx = use_context_provider(|| TableCtx {
         ui,
         sel: Signal::new(Sel::default()),
@@ -687,6 +698,7 @@ pub fn TableGame(controls: Element) -> Element {
         decks_sort: Signal::new(DecksSort::default()),
         run: Signal::new(None),
         cards,
+        costs,
         game,
     });
     let mut run = ctx.run;

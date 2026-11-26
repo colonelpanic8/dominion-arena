@@ -377,9 +377,20 @@ fn build(
             }
         }
     }
+    // The Black Market deck is named after its Kingdom card; their client has a card of
+    // its own for it.
+    let black_market_deck =
+        |p: &dominion_engine::PileView<'_>| p.hidden() && p.card() == Card::BlackMarket;
     let mut piles = view
         .piles()
-        .map(|p| Ok((catalog.card(p.card())?, p)))
+        .map(|p| {
+            let name = if black_market_deck(&p) {
+                catalog.named("Black Market Deck")?
+            } else {
+                catalog.card(p.card())?
+            };
+            Ok((name, p))
+        })
         .collect::<Result<Vec<_>, ProjectionError>>()?;
     piles.sort_by_key(|x| x.0);
     let mut overrides = Vec::new();
@@ -419,14 +430,14 @@ fn build(
             dominion_protocol::pile_marker(kind, s.cards.len())
         });
         let cost = view.cost(pile.card());
-        overrides.push((
+        overrides.extend((!black_market_deck(pile)).then_some((
             *name,
             model::Cost {
                 coins: cost.coins.into(),
                 potions: cost.potions.into(),
                 debt: cost.debt.into(),
             },
-        ));
+        )));
         if holder.is_some() {
             held.push((pile.id(), VisibleZone::new(kind, -1, *name, slots)));
             continue;

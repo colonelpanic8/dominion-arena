@@ -67,6 +67,19 @@ impl Board {
             .then_some(now)
     }
 
+    /// What a card costs now, by name, for each card a pile shows: dominion.games prints
+    /// that on every copy, wherever it is (Bridge, Highway, Canal, ...).
+    pub fn current_costs(&self) -> HashMap<String, Cost> {
+        self.supply
+            .basic
+            .iter()
+            .chain(self.supply.kingdom.iter().flatten())
+            .chain(&self.non_supply)
+            .filter(|p| !p.hidden)
+            .filter_map(|p| Some((p.card.clone(), p.cost.clone()?)))
+            .collect()
+    }
+
     /// The player drawn where the seat's own is: for someone watching, the first.
     pub fn front(&self) -> Option<&PlayerEntry> {
         self.you
@@ -764,18 +777,7 @@ fn player_badges(p: &PlayerView) -> Vec<Badge> {
         };
         out.push(badge(kind, format!("Journey token face {side}"), None));
     }
-    for (token, pile) in &p.adventure_tokens {
-        out.push(Badge {
-            kind: token.clone(),
-            text: match pile {
-                Some(pile) => format!("{token} token on {pile}"),
-                None => format!("{token} token"),
-            },
-            count: None,
-            player: Some(p.index),
-            card: pile.clone(),
-        });
-    }
+    // Adventures tokens are drawn on their piles only, as dominion.games draws them.
     out
 }
 

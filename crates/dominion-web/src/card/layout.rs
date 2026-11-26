@@ -60,6 +60,17 @@ impl Rect {
         )
     }
 
+    /// A square box at this one's corner, its side cut to whole pixels as dominion.games
+    /// sizes its icons (a little larger before it is cut).
+    pub fn css_whole_px(&self) -> String {
+        format!(
+            "left:{:.3}%;top:{:.3}%;width:round(down, {:.3}%, 1px);height:auto;aspect-ratio:1;",
+            self.x * 100.0,
+            self.y * 100.0,
+            self.w * 101.5,
+        )
+    }
+
     /// Width in `cqw` (hundredths of the card's width).
     pub fn width_cqw(&self) -> f32 {
         self.w * 100.0

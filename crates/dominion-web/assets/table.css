@@ -116,7 +116,7 @@ body:has(.dt-root) .topbar { display: none; }
 .dt-count.dt-gone { opacity: 0; }
 .dt-count img { position: absolute; inset: 0; width: 100%; height: 100%; }
 .dt-count span { position: relative; }
-.dt-micro .dt-count { width: auto; height: 100%; aspect-ratio: 1; font-size: 16cqw; }
+.dt-micro .dt-count { width: auto; min-width: 0; height: 100%; aspect-ratio: 1; font-size: 16cqw; }
 .dt-inverted .dt-count { top: auto; left: auto; bottom: 0; right: 0; }
 /* dominion.games' sign: a fifth of the card's shorter side, in its corner. */
 .dt-plus { position: absolute; right: 0; bottom: 0; height: min(20%, 20cqw); aspect-ratio: 1; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; pointer-events: none; }
@@ -161,7 +161,6 @@ body:has(.dt-root) .topbar { display: none; }
 .dt-tokens { position: absolute; left: 8%; right: 8%; top: 64%; height: 20%; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 4cqw; pointer-events: auto; }
 .dt-micro .dt-tokens { top: 0; bottom: 0; height: auto; left: auto; right: 4%; align-items: center; }
 .dt-label { position: absolute; left: 0; right: 0; bottom: -2.4em; text-align: center; font-size: calc(1.4 * var(--vh)); color: #ddd; text-shadow: 0 0 3px #000, 0 0 3px #000; white-space: nowrap; }
-.dt-cost-changed .dc-cost { filter: drop-shadow(0 0 3px #7f7); }
 
 /* Badges: tokens and counters on piles and bars. */
 .dt-badges { display: inline-flex; gap: calc(0.4 * var(--vh)); align-items: center; }
@@ -186,6 +185,12 @@ body:has(.dt-root) .topbar { display: none; }
 .dt-disc img { border-radius: 50%; box-shadow: 0 0 0 2px var(--pc); }
 .dt-colored { box-sizing: border-box; aspect-ratio: 1; background: var(--pc); border: 1px solid rgba(0, 0, 0, 0.4); border-radius: 20%; }
 .dt-colored img { width: 100%; height: 100%; object-fit: contain; }
+/* A player's token on a pile, as dominion.games' token layer draws it: n = 0.2 of the
+   card's shorter side (a mini card is 0.943 times as tall as wide), a 1.2n slot each in
+   a centred row, the token n square in a 0.05n border, filled with its owner's colour. */
+.dt-mini .dt-tokens:has(> .dt-disc) { left: 8%; right: auto; width: 84%; top: 64%; height: 20%; flex-wrap: nowrap; align-items: center; gap: 0; }
+.dt-mini .dt-tokens > .dt-disc { flex: 0 1 22.63cqw; min-width: 0; height: 18.86cqw; align-items: flex-start; }
+.dt-mini .dt-tokens > .dt-disc img { position: absolute; left: 0; top: 0; width: 20.74cqw; height: 20.74cqw; box-sizing: border-box; border: 0.943cqw solid rgba(0, 0, 0, 0.4); border-radius: 20%; background: var(--pc); box-shadow: none; object-fit: cover; }
 .dt-b-trait { background: rgba(0, 0, 0, 0.7); border-radius: 3px; padding: 0 0.3em; font-size: calc(1.3 * var(--vh)); height: auto; }
 .dt-tokens .dt-b-trait { font-size: 8cqw; line-height: 1.15; }
 .dt-tokens:has(.dt-b-trait) { bottom: 3%; top: auto; height: auto; left: 0; right: 0; flex-direction: column; align-items: center; gap: 1cqw; }
