@@ -784,8 +784,9 @@ pub fn DecisionWindow(
             LookingWindow { g, cards: looking, answer: None, low: false, onhide: move |_| hidden.set(Some(String::new())) }
         };
     };
+    // Naming a card, dominion.games shows its input box alone, even for cards on no pile.
     let tray: Vec<usize> = (0..u.spots.len())
-        .filter(|&i| u.spots[i] == Spot::Tray)
+        .filter(|&i| u.spots[i] == Spot::Tray && !u.inter.name_any)
         .collect();
     let show_order = u.inter.ordered && sel.picks().len() > 1;
     if tray.is_empty() && !u.inter.name_any && !show_order && !looking.is_empty() {

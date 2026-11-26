@@ -153,10 +153,36 @@ pub fn interaction(view: &AgentView, d: &AgentDecision, cards: &CardDb) -> Inter
             && o.card.as_deref().is_some_and(|c| is_action(cards, c))
     };
 
+    // The card a yes-or-no question's Yes is answered on, where it is.
+    let on_card = super::wording::yes_on_card(d).and_then(|(card, _)| {
+        if held("hand", card) > 0 {
+            Some((card, Place::Hand, Some("hand"), None))
+        } else if held("inPlay", card) > 0 {
+            Some((card, Place::InPlay, Some("inPlay"), None))
+        } else {
+            pile_of(view, card).map(|p| (card, Place::Supply, None, Some(p)))
+        }
+    });
+
     let mut targets: Vec<Target> = vec![];
     // Targets that more options may join, by what they share.
     let mut joinable: BTreeMap<JoinKey, usize> = BTreeMap::new();
     for o in &d.options {
+        if o.action == "yes"
+            && let Some((card, place, zone, pile)) = on_card
+        {
+            targets.push(Target {
+                place,
+                options: vec![o.index],
+                label: o.label.clone(),
+                action: o.action.clone(),
+                card: Some(card.into()),
+                zone: zone.map(Into::into),
+                pile,
+                takes_way: false,
+            });
+            continue;
+        }
         let mut place = Place::Button;
         let mut pile = None;
         let mut join = false;

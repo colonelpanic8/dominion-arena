@@ -129,6 +129,7 @@ fn purpose_suffixes(purpose: &str) -> &'static [&'static str] {
         "pass" => &["PASS"],
         "overpay" => &["OVERPAY"],
         "number" => &["INSERT"],
+        "name" => &["SKIP", "PLAY"],
         // Moving a token onto a pile (Plan, Lost Arts, ...).
         "other" => &["MOVE", "NEW"],
         "move" => &["SHUFFLE"],
@@ -480,12 +481,36 @@ pub fn done_count(d: &AgentDecision, picked: usize) -> Option<String> {
 /// dominion.games' name and icon for a button whose own label says something else: its
 /// card modes for a card's yes-or-no questions.
 pub fn choice_button(d: &AgentDecision, label: &str) -> Option<(&'static str, &'static str)> {
+    if let Some((_, decline)) = yes_on_card(d)
+        && d.options
+            .iter()
+            .any(|o| o.action == "no" && o.label == label)
+    {
+        return Some((decline, "refuse"));
+    }
     Some(match (d.source.as_deref()?, label) {
         ("Library", l) if l.starts_with("Set aside ") => ("Skip", "refuse"),
         ("Library", "Keep it") => ("Keep", "put-in-hand"),
         ("Navigator", "Discard them all") => ("Discard All", "refuse"),
         ("Oracle" | "Scrying Pool", l) if l.starts_with("Discard ") => ("Discard", "discard-icon"),
         ("Oracle" | "Scrying Pool", l) if l.starts_with("Put ") => ("Topdeck", "topdeck-icon"),
+        _ => return None,
+    })
+}
+
+/// A yes-or-no question dominion.games answers Yes to by a click on a card (in the hand,
+/// in play or a pile's top): that card, and its button for No.
+pub fn yes_on_card(d: &AgentDecision) -> Option<(&'static str, &'static str)> {
+    if d.kind != "choose" || !d.options.iter().any(|o| o.action == "yes") {
+        return None;
+    }
+    Some(match (d.source.as_deref()?, d.purpose.as_str()) {
+        ("Mountebank", "discard") => ("Curse", "Don't Discard"),
+        ("Gold Mine", _) => ("Gold", "No thanks"),
+        ("Ill-Gotten Gains", _) => ("Copper", "No Copper"),
+        ("Tournament", _) => ("Province", "Don't Reveal"),
+        ("Snake Witch", _) => ("Snake Witch", "Don't return"),
+        ("Acolyte", "trash") => ("Acolyte", "Don't Trash"),
         _ => return None,
     })
 }
@@ -673,6 +698,10 @@ mod tests {
         assert_eq!(
             p(decision("choose", "mode", 2, 2, Some("Courtier"))),
             ["Choose", "2", "options"]
+        );
+        assert_eq!(
+            p(decision("name", "name", 1, 1, Some("Rebuild"))),
+            ["Name a card to skip"]
         );
         let mut pass = decision("cards", "pass", 1, 1, Some("Masquerade"));
         pass.prompt = "Masquerade: choose a card to pass to Bob".into();
