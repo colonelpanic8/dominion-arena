@@ -202,6 +202,7 @@ pub fn RatingsWindow(board: Rc<Board>) -> Element {
 
 /// A player's mats, set-aside cards and (off their turn) cards in play, as tabs, titled
 /// as dominion.games titles them: Native Village's and Island's mats are "Set Aside".
+/// Cards looked at have no tab: their windows show them.
 fn tabs(p: &PlayerEntry, show_in_play: bool) -> Vec<(String, String, Zone, Option<String>)> {
     let mut out = vec![];
     if show_in_play && p.in_play.count > 0 {
@@ -214,7 +215,7 @@ fn tabs(p: &PlayerEntry, show_in_play: bool) -> Vec<(String, String, Zone, Optio
         out.push(("inPlay".into(), "Play Area".into(), played, None));
     }
     for z in &p.zones {
-        if z.zone.count > 0 {
+        if z.zone.count > 0 && z.key != "looking" {
             let (label, art) = match z.key.as_str() {
                 "tavern" => (z.label.clone(), Some("tavern-mat".to_string())),
                 "exile" => (z.label.clone(), Some("exile-mat".to_string())),
