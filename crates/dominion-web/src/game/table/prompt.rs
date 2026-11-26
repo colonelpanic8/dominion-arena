@@ -10,7 +10,7 @@ use super::{Spot, Ui, use_table};
 use crate::app::use_cards;
 use crate::assets::use_assets;
 use crate::card::CardSize;
-use crate::game::board::Board;
+use crate::game::board::{self, Board};
 use crate::game::interaction::Target;
 use crate::game::state::Selection;
 use crate::game::wording;
@@ -387,9 +387,12 @@ pub fn Buttons(
                 .any(|k| counter_action(k) == Some(u.inter.targets[i].action.as_str()))
         })
         .collect();
-    let side: Vec<usize> = (0..u.spots.len())
+    // dominion.games lists abilities by the ids of their cards, which follow its list
+    // of cards.
+    let mut side: Vec<usize> = (0..u.spots.len())
         .filter(|&i| u.spots[i] == Spot::Ability)
         .collect();
+    side.sort_by_key(|&i| board::id_order(u.inter.targets[i].card.as_deref().unwrap_or("")));
     let numbers = main.len() > MAX_NUMBER_BUTTONS
         && main.iter().all(|&i| u.inter.targets[i].action == "number");
     let picks = sel.picks().len();

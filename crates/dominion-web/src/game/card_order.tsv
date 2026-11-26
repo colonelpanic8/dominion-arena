@@ -1,0 +1,834 @@
+Curse	1
+Copper	2
+Silver	3
+Gold	4
+Estate	5
+Duchy	6
+Province	7
+Artisan	8
+Bandit	9
+Bureaucrat	10
+Cellar	11
+Chapel	12
+Council Room	13
+Festival	14
+Gardens	15
+Harbinger	16
+Laboratory	17
+Library	18
+Market	19
+Merchant	20
+Militia	21
+Mine	22
+Moat	23
+Moneylender	24
+Poacher	25
+Remodel	26
+Sentry	27
+Smithy	28
+Throne Room	29
+Vassal	30
+Village	31
+Witch	32
+Workshop	33
+Courtyard	34
+Conspirator	35
+Courtier	36
+Baron	37
+Bridge	38
+Diplomat	39
+Duke	40
+Farm	41
+Nobles	42
+Ironworks	43
+Lurker	44
+Masquerade	45
+Mill	46
+Mining Village	47
+Minion	48
+Patrol	49
+Pawn	50
+Replace	51
+Secret Passage	52
+Shanty Town	53
+Steward	54
+Swindler	55
+Torturer	56
+Trading Post	57
+Upgrade	58
+Wishing Well	59
+Ambassador	60
+Bazaar	61
+Caravan	62
+Cutpurse	63
+Embargo	64
+Explorer	65
+Fishing Village	66
+Ghost Ship	67
+Haven	68
+Island	69
+Lighthouse	70
+Lookout	71
+Merchant Ship	72
+Native Village	73
+Navigator	74
+Outpost	75
+Pearl Diver	76
+Pirate Ship	77
+Salvager	78
+Sea Hag	79
+Smugglers	80
+Tactician	81
+Treasure Map	82
+Treasury	83
+Warehouse	84
+Wharf	85
+Alchemist	86
+Apothecary	87
+Apprentice	88
+Familiar	89
+Golem	90
+Herbalist	91
+Philosopher's Stone	92
+Possession	93
+Potion	94
+Scrying Pool	95
+Transmute	96
+University	97
+Vineyard	98
+Bank	99
+Bishop	100
+Colony	101
+Contraband	102
+Counting House	103
+City	104
+Expand	105
+Forge	106
+Grand Market	107
+Goons	108
+Hoard	109
+King's Court	110
+Loan	111
+Mint	112
+Monument	113
+Mountebank	114
+Peddler	115
+Platinum	116
+Quarry	117
+Rabble	118
+Royal Seal	119
+Talisman	120
+Trade Route	121
+Vault	122
+Venture	123
+Watchtower	124
+Worker's Village	125
+Bag of Gold	127
+Diadem	128
+Fairgrounds	129
+Farming Village	130
+Followers	131
+Fortune Teller	132
+Hamlet	133
+Harvest	134
+Horse Traders	135
+Horn of Plenty	136
+Hunting Party	137
+Jester	138
+Menagerie	139
+Princess	140
+Remake	141
+Tournament	142
+Trusty Steed	143
+Young Witch	144
+Border Village	145
+Cache	146
+Cartographer	147
+Crossroads	148
+Develop	149
+Duchess	150
+Embassy	151
+Farmland	152
+Fool's Gold	153
+Haggler	154
+Highway	155
+Ill-Gotten Gains	156
+Inn	157
+Jack of All Trades	158
+Mandarin	159
+Noble Brigand	160
+Nomad Camp	161
+Oasis	162
+Oracle	163
+Margrave	164
+Scheme	165
+Silk Road	166
+Spice Merchant	167
+Stables	168
+Trader	169
+Tunnel	170
+Ruins	171
+Knights	172
+Abandoned Mine	173
+Altar	174
+Armory	175
+Band of Misfits	176
+Bandit Camp	177
+Beggar	178
+Catacombs	179
+Count	180
+Counterfeit	181
+Cultist	182
+Dame Anna	183
+Dame Josephine	184
+Dame Molly	185
+Dame Natalie	186
+Dame Sylvia	187
+Death Cart	188
+Feodum	189
+Forager	190
+Fortress	191
+Graverobber	192
+Hermit	193
+Hovel	194
+Hunting Grounds	195
+Ironmonger	196
+Junk Dealer	197
+Madman	198
+Market Square	199
+Marauder	200
+Mercenary	201
+Mystic	202
+Necropolis	203
+Overgrown Estate	204
+Pillage	205
+Poor House	206
+Procession	207
+Rats	208
+Rebuild	209
+Rogue	210
+Ruined Library	211
+Ruined Market	212
+Ruined Village	213
+Sage	214
+Scavenger	215
+Sir Bailey	216
+Sir Destry	217
+Sir Martin	218
+Sir Michael	219
+Sir Vander	220
+Spoils	221
+Storeroom	222
+Squire	223
+Survivors	224
+Urchin	225
+Vagrant	226
+Wandering Minstrel	227
+Advisor	228
+Baker	229
+Butcher	230
+Candlestick Maker	231
+Doctor	232
+Herald	233
+Journeyman	234
+Masterpiece	235
+Merchant Guild	236
+Plaza	237
+Taxman	238
+Soothsayer	239
+Stonemason	240
+Alms	241
+Amulet	242
+Artificer	243
+Ball	244
+Bonfire	245
+Borrow	246
+Bridge Troll	247
+Caravan Guard	248
+Champion	249
+Coin of the Realm	250
+Disciple	251
+Distant Lands	252
+Dungeon	253
+Duplicate	254
+Expedition	255
+Ferry	256
+Fugitive	257
+Gear	258
+Giant	259
+Guide	260
+Haunted Woods	261
+Hero	262
+Hireling	263
+Inheritance	264
+Lost Arts	265
+Lost City	266
+Magpie	267
+Messenger	268
+Miser	269
+Mission	270
+Pathfinding	271
+Page	272
+Peasant	273
+Pilgrimage	274
+Plan	275
+Port	276
+Quest	277
+Ranger	278
+Raid	279
+Ratcatcher	280
+Raze	281
+Relic	282
+Royal Carriage	283
+Save	284
+Scouting Party	285
+Seaway	286
+Soldier	287
+Storyteller	288
+Swamp Hag	289
+Teacher	290
+Travelling Fair	291
+Trade	292
+Training	293
+Transmogrify	294
+Treasure Trove	295
+Treasure Hunter	296
+Warrior	297
+Wine Merchant	298
+Encampment	299
+Plunder	300
+Patrician	301
+Emporium	302
+Settlers	303
+Bustling Village	304
+Catapult	305
+Rocks	306
+Gladiator	307
+Fortune	308
+Castles	309
+Humble Castle	310
+Crumbling Castle	311
+Small Castle	312
+Haunted Castle	313
+Opulent Castle	314
+Sprawling Castle	315
+Grand Castle	316
+King's Castle	317
+Advance	318
+Annex	319
+Archive	320
+Aqueduct	321
+Arena	322
+Bandit Fort	323
+Banquet	324
+Basilica	325
+Baths	326
+Battlefield	327
+Capital	328
+Charm	329
+Chariot Race	330
+City Quarter	331
+Colonnade	332
+Conquest	333
+Crown	334
+Delve	335
+Defiled Shrine	336
+Dominate	337
+Donate	338
+Enchantress	339
+Engineer	340
+Farmers' Market	341
+Forum	342
+Fountain	343
+Groundskeeper	344
+Keep	345
+Labyrinth	346
+Legionary	347
+Mountain Pass	348
+Museum	349
+Obelisk	350
+Orchard	351
+Overlord	352
+Palace	353
+Ritual	354
+Royal Blacksmith	355
+Sacrifice	356
+Salt the Earth	357
+Tax	358
+Temple	359
+Tomb	360
+Tower	361
+Triumph	362
+Triumphal Arch	363
+Villa	364
+Wall	365
+Wolf Den	366
+Wedding	367
+Wild Hunt	368
+Windfall	369
+The Earth's Gift	377
+The Field's Gift	378
+The Flame's Gift	379
+The Forest's Gift	380
+The Moon's Gift	381
+The Mountain's Gift	382
+The River's Gift	383
+The Sea's Gift	384
+The Sky's Gift	385
+The Sun's Gift	386
+The Swamp's Gift	387
+The Wind's Gift	388
+Bad Omens	391
+Delusion	392
+Envy	393
+Famine	394
+Fear	395
+Greed	396
+Haunting	397
+Locusts	398
+Misery	399
+Plague	400
+Poverty	401
+War	402
+Miserable	403
+Twice Miserable	404
+Envious	405
+Deluded	406
+Lost in the Woods	407
+Bard	408
+Blessed Village	409
+Changeling	410
+Cemetery	411
+Cobbler	412
+Conclave	413
+Crypt	414
+Cursed Village	415
+Den of Sin	416
+Devil's Workshop	417
+Druid	418
+Exorcist	419
+Faithful Hound	420
+Fool	421
+Ghost Town	422
+Guardian	423
+Idol	424
+Leprechaun	425
+Monastery	426
+Necromancer	427
+Night Watchman	428
+Pixie	429
+Pooka	430
+Raider	431
+Sacred Grove	432
+Secret Cave	433
+Shepherd	434
+Skulk	435
+Tormentor	436
+Tragic Hero	437
+Tracker	438
+Vampire	439
+Werewolf	440
+Cursed Gold	441
+Goat	442
+Haunted Mirror	443
+Lucky Coin	444
+Magic Lamp	445
+Pasture	446
+Pouch	447
+Bat	448
+Ghost	449
+Imp	450
+Will-o'-Wisp	451
+Wish	452
+Zombie Apprentice	453
+Zombie Mason	454
+Zombie Spy	455
+Acting Troupe	456
+Border Guard	457
+Cargo Ship	458
+Ducat	459
+Experiment	460
+Flag Bearer	461
+Hideout	462
+Inventor	463
+Improve	464
+Lackeys	465
+Mountain Village	466
+Patron	467
+Priest	468
+Research	469
+Silk Merchant	470
+Old Witch	471
+Recruiter	472
+Scepter	473
+Scholar	474
+Sculptor	475
+Seer	476
+Spices	477
+Swashbuckler	478
+Treasurer	479
+Villain	480
+Flag	481
+Horn	482
+Key	483
+Lantern	484
+Treasure Chest	485
+Academy	486
+Barracks	487
+Canal	488
+Capitalism	489
+Cathedral	490
+Citadel	491
+City Gate	492
+Crop Rotation	493
+Exploration	494
+Fair	495
+Fleet	496
+Guildhall	497
+Innovation	498
+Pageant	499
+Piazza	500
+Road Network	501
+Sewers	502
+Silos	503
+Sinister Plot	504
+Star Chart	505
+Sauna	506
+Avanto	507
+Black Market	508
+Envoy	509
+Governor	510
+Prince	511
+Stash	512
+Summon	513
+Walled Village	514
+Dismantle	516
+Captain	517
+Church	518
+Marchland	519
+Black Cat	520
+Sleigh	521
+Supplies	522
+Camel Train	523
+Goatherd	524
+Scrap	525
+Sheepdog	526
+Snowy Village	527
+Stockpile	528
+Bounty Hunter	529
+Cardinal	530
+Cavalry	531
+Groom	532
+Hostelry	533
+Village Green	534
+Barge	535
+Coven	536
+Displace	537
+Falconer	538
+Fisherman	539
+Gatekeeper	540
+Hunting Lodge	541
+Kiln	542
+Livery	543
+Mastermind	544
+Paddock	545
+Sanctuary	546
+Destrier	547
+Wayfarer	548
+Animal Fair	549
+Horse	550
+Way of the Butterfly	551
+Way of the Camel	552
+Way of the Chameleon	553
+Way of the Frog	554
+Way of the Goat	555
+Way of the Horse	556
+Way of the Mole	557
+Way of the Monkey	558
+Way of the Mouse	559
+Way of the Mule	560
+Way of the Otter	561
+Way of the Owl	562
+Way of the Ox	563
+Way of the Pig	564
+Way of the Rat	565
+Way of the Seal	566
+Way of the Sheep	567
+Way of the Squirrel	568
+Way of the Turtle	569
+Way of the Worm	570
+Delay	571
+Desperation	572
+Gamble	573
+Pursue	574
+Ride	575
+Toil	576
+Enhance	577
+March	578
+Transport	579
+Banish	580
+Bargain	581
+Invest	582
+Seize the Day	583
+Commerce	584
+Demand	585
+Stampede	586
+Reap	587
+Enclave	588
+Alliance	589
+Populate	590
+Monkey	611
+Blockade	612
+Sailor	613
+Pirate	614
+Corsair	615
+Sea Chart	616
+Astrolabe	617
+Tide Pools	618
+Sea Witch	619
+Anvil	620
+Clerk	621
+Investment	622
+Tiara	623
+Charlatan	624
+Collection	625
+Crystal Ball	626
+Magnate	627
+War Chest	628
+Guard Dog	629
+Berserker	630
+Nomads	631
+Trail	632
+Weaver	633
+Souk	634
+Cauldron	635
+Wheelwright	636
+Witch's Hut	637
+Shop	651
+Carnival	652
+Ferryman	653
+Town	654
+Modify	655
+Merchant Camp	656
+Swap	657
+Skirmisher	658
+Highwayman	659
+Barbarian	660
+Innkeeper	661
+Capital City	662
+Specialist	663
+Carpenter	664
+Royal Galley	665
+Marquis	666
+Sentinel	667
+Courier	668
+Galleria	669
+Hunter	670
+Sycophant	671
+Underling	672
+Importer	673
+Contract	674
+Emissary	675
+Bauble	676
+Broker	677
+Guildmaster	678
+Architects' Guild	679
+Order of Astrologers	680
+League of Bankers	681
+Mountain Folk	682
+Woodworkers' Guild	683
+Peaceful Cult	684
+Crafters' Guild	685
+Cave Dwellers	686
+Plateau Shepherds	687
+Desert Guides	688
+Family of Inventors	689
+Island Folk	690
+Order of Masons	691
+Band of Nomads	692
+Gang of Pickpockets	693
+Market Towns	694
+Forest Dwellers	695
+Fellowship of Scribes	696
+League of Shopkeepers	697
+Coastal Haven	698
+City-state	699
+Trappers' Lodge	700
+Circle of Witches	701
+Augurs	702
+Herb Gatherer	703
+Acolyte	704
+Sorceress	705
+Sibyl	706
+Clashes	707
+Battle Plan	708
+Archer	709
+Warlord	710
+Territory	711
+Forts	712
+Tent	713
+Garrison	714
+Hill Fort	715
+Stronghold	716
+Odysseys	717
+Old Map	718
+Voyage	719
+Sunken Treasure	720
+Distant Shore	721
+Townsfolk	722
+Town Crier	723
+Blacksmith	724
+Miller	725
+Elder	726
+Wizards	727
+Student	728
+Conjurer	729
+Sorcerer	730
+Lich	731
+Cage	733
+Grotto	734
+Jewelled Egg	735
+Search	736
+Shaman	737
+Secluded Shrine	738
+Siren	739
+Stowaway	740
+Taskmaster	741
+Abundance	742
+Cabin Boy	743
+Crucible	744
+Flagship	745
+Fortune Hunter	746
+Gondola	747
+Harbor Village	748
+Landing Party	749
+Mapmaker	750
+Maroon	751
+Rope	752
+Swamp Shacks	753
+Tools	754
+Buried Treasure	755
+Crew	756
+Cutthroat	757
+Enlarge	758
+Figurine	759
+First Mate	760
+Frigate	761
+Longship	762
+Mining Road	763
+Pendant	764
+Pickaxe	765
+Pilgrim	766
+Quartermaster	767
+Silver Mine	768
+Trickster	769
+Wealthy Village	770
+Sack of Loot	771
+King's Cache	772
+Bury	773
+Avoid	774
+Deliver	775
+Peril	776
+Rush	777
+Foray	778
+Launch	779
+Mirror	780
+Prepare	781
+Scrounge	782
+Journey	783
+Maelstrom	784
+Looting	785
+Invasion	786
+Prosper	787
+Loot	788
+Amphora	789
+Doubloons	790
+Endless Chalice	791
+Figurehead	792
+Hammer	793
+Insignia	794
+Jewels	795
+Orb	796
+Prize Goat	797
+Puzzle Box	798
+Sextant	799
+Shield	800
+Spell Scroll	801
+Staff	802
+Sword	803
+Cheap	804
+Cursed	805
+Fated	806
+Fawning	807
+Friendly	808
+Hasty	809
+Inherited	810
+Inspiring	811
+Nearby	812
+Patient	813
+Pious	814
+Reckless	815
+Rich	816
+Shy	817
+Tireless	818
+Farmhands	819
+Joust	820
+Courser	822
+Renown	823
+Coronet	824
+Demesne	825
+Housecarl	826
+Huge Turnip	827
+Farrier	828
+Infirmary	829
+Footpad	830
+Fishmonger	831
+Snake Witch	832
+Aristocrat	833
+Craftsman	834
+Riverboat	835
+Root Cellar	836
+Alley	837
+Change	838
+Ninja	839
+Poet	840
+River Shrine	841
+Rustic Village	842
+Gold Mine	843
+Imperial Envoy	844
+Kitsune	845
+Litter	846
+Rice Broker	847
+Ronin	848
+Tanuki	849
+Tea House	850
+Samurai	851
+Rice	852
+Mountain Shrine	853
+Daimyo	854
+Artist	855
+Approaching Army	856
+Biding Time	857
+Bureaucracy	858
+Divine Wind	859
+Enlightenment	860
+Flourishing Trade	861
+Good Harvest	862
+Great Leader	863
+Growth	864
+Harsh Winter	865
+Kind Emperor	866
+Panic	867
+Progress	868
+Rapid Expansion	869
+Sickness	870
+Amass	871
+Asceticism	872
+Credit	873
+Foresight	874
+Kintsugi	875
+Practice	876
+Sea Trade	877
+Receive Tribute	878
+Gather	879
+Continue	880

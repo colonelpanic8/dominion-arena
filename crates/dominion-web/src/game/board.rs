@@ -501,6 +501,23 @@ fn plus(text: &str, thing: &str) -> u32 {
         .unwrap_or(0)
 }
 
+/// Where each card it has comes in dominion.games' list of cards (client 2.3.7), by name.
+static CARD_ORDER: LazyLock<HashMap<&'static str, u16>> = LazyLock::new(|| {
+    include_str!("card_order.tsv")
+        .lines()
+        .filter_map(|l| {
+            let (name, at) = l.split_once('\t')?;
+            Some((name, at.parse().ok()?))
+        })
+        .collect()
+});
+
+/// Where `card` comes in dominion.games' list of cards, which orders its card ids:
+/// cards it lacks come last.
+pub fn id_order(card: &str) -> u16 {
+    CARD_ORDER.get(card).copied().unwrap_or(u16::MAX)
+}
+
 /// dominion.games' sorting group of each card it has (client 2.3.7), by name.
 static SORT_GROUPS: LazyLock<HashMap<&'static str, u8>> = LazyLock::new(|| {
     include_str!("sort_groups.tsv")
@@ -1317,6 +1334,15 @@ mod tests {
         let mut r = start;
         sort_counts(&mut r, CountsKey::Player(1), true);
         assert_eq!(names(&r), ["Witch", "Silver", "Estate", "Copper"]);
+    }
+
+    #[test]
+    fn cards_come_in_dominion_games_order() {
+        let lines = include_str!("card_order.tsv").lines().count();
+        assert_eq!(CARD_ORDER.len(), lines);
+        assert!(id_order("Copper") < id_order("Caravan"));
+        assert!(id_order("Caravan") < id_order("Fishing Village"));
+        assert!(id_order("Seize the Day") < id_order("No such card"));
     }
 
     #[test]
