@@ -173,26 +173,31 @@ pub(super) fn reminders(
         .iter()
         .filter(|(_, holder)| *holder == Some(p.id()))
         .map(|(a, _)| *a);
-    let mut counts: BTreeMap<i32, i32> = BTreeMap::new();
+    // In Arena's card order, as Arena's own table draws them.
+    let mut counts: BTreeMap<Card, i32> = BTreeMap::new();
+    // A kept Boon's effect (The River's Gift) is the Boon's one reminder.
+    let kept = p.boons_kept();
     for card in view
         .lasting()
         .iter()
-        .filter(|l| l.owner == p.id())
+        .filter(|l| l.owner == p.id() && !kept.contains(&l.card))
         .map(|l| l.card)
         .chain(p.states().iter().copied())
         .chain(p.boons_kept().iter().copied())
         .chain(held)
     {
-        *counts.entry(catalog.card(card)?).or_insert(0) += 1;
+        *counts.entry(card).or_insert(0) += 1;
     }
-    Ok(counts
+    counts
         .into_iter()
-        .map(|(card_name, frequency)| model::Reminder {
-            card_name,
-            frequency,
-            blinking: false,
+        .map(|(card, frequency)| {
+            Ok(model::Reminder {
+                card_name: catalog.card(card)?,
+                frequency,
+                blinking: false,
+            })
         })
-        .collect())
+        .collect()
 }
 
 /// Whether the players have Journey tokens: a card or Event in the game turns them.
