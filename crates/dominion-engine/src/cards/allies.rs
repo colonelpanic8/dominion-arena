@@ -470,7 +470,10 @@ impl SetRules for Rules {
             .owned()
             .filter(|&c| g.cost_of(c) == Cost::coins(2))
             .count() as u32;
-        out.push((Card::PlateauShepherds, 2 * twos.min(g.player(p).favors) as i32));
+        out.push((
+            Card::PlateauShepherds,
+            2 * twos.min(g.player(p).favors) as i32,
+        ));
     }
 
     fn build_kingdom_pile(g: &mut Game, card: Card) -> bool {
