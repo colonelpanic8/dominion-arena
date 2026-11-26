@@ -6,7 +6,7 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { Arena } from './arena.mjs';
-import { StaticCache, openTheirs, enterTheirs, openOurs } from './clients.mjs';
+import { StaticCache, openTheirs, enterTheirs, openOurs, spectateTheirs } from './clients.mjs';
 import { Driver } from './drive.mjs';
 import { show } from './windows.mjs';
 import { extract, settle } from './extract.mjs';
@@ -56,6 +56,8 @@ const browser = await chromium.launch({
 
 const PASSWORD = 'parity-password';
 const PLAYERS = ['Alice', 'Bob', 'Carol', 'Dave', 'Erin', 'Frank'];
+// The account a `watch` scenario's clients sign in as: no seat.
+const WATCHER = 'Wendy';
 
 // The log and chat beside the table: their client is told no history when it joins a
 // game in progress. Also their Force end turn button, offered because Bob's seat has no
@@ -97,6 +99,9 @@ async function runScenario(scenario) {
     for (const name of players) seats[name] = await arena.register(name, PASSWORD);
     const [alice, ...guests] = Object.values(seats);
     const game = await arena.startGame(alice, guests, scenario.spec);
+    // A scenario that `watch`es has both clients sign in as an account with no seat.
+    const viewer = scenario.watch ? WATCHER : players[0];
+    const viewerCookie = scenario.watch ? await arena.register(WATCHER, PASSWORD) : alice;
     const driver = new Driver(arena, game, seats);
     await driver.init();
     await driver.run(scenario.steps);
@@ -110,7 +115,8 @@ async function runScenario(scenario) {
       log.write(m.text() + '\n');
     });
     theirs.page.on('pageerror', (e) => log.write(`ERROR ${e.stack ?? e.message}\n`));
-    await enterTheirs(theirs.page, arena, players[0], PASSWORD);
+    await enterTheirs(theirs.page, arena, viewer, PASSWORD);
+    if (scenario.watch) await spectateTheirs(theirs.page);
     if (scenario.refused) {
       // A game their client can't have: its lobby shows why instead.
       await theirs.page
@@ -123,7 +129,7 @@ async function runScenario(scenario) {
       if (!loaded) throw new Error(`their client never loaded the game; see ${dir}/theirs-console.log`);
     }
 
-    const ours = await openOurs(browser, arena, alice, vp);
+    const ours = await openOurs(browser, arena, viewerCookie, vp);
     contexts.push(ours.context);
     await ours.page.goto(`${arena.url}/game/${encodeURIComponent(game)}`);
     await ours.page.waitForSelector('.dt-root', { timeout: 30000 });

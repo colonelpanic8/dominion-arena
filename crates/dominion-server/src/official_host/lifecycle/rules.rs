@@ -320,7 +320,10 @@ pub(super) fn summary(arena: &Arena, info: &TableInfo) -> Result<transport::Tabl
         spectators: 0,
         min_players: info.seats.len() as i32,
         max_players: info.seats.len() as i32,
-        observable: false,
+        observable: info
+            .game
+            .as_ref()
+            .is_some_and(|g| arena.hub.meta(g).is_ok_and(|m| m.watchable)),
         joinable: info.game.is_none() && info.seats.iter().any(|s| s.kind == SeatKind::Open),
         status: if info.game.is_some() {
             2

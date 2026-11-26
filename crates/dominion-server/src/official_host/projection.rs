@@ -136,8 +136,12 @@ fn build(
     }
     table::validate(view)?;
     let players = view.num_players();
-    if !matches!(context.viewer_role, ViewerRole::Player(p) if p < players && view.me() == Some(PlayerId(p as u8)))
-    {
+    let viewer = match context.viewer_role {
+        ViewerRole::Player(p) => p < players && view.me() == Some(PlayerId(p as u8)),
+        // A spectator sees every hand ([`dominion_engine::Game::spectate`]).
+        ViewerRole::Spectator => view.me().is_none() && view.players().all(|p| p.hand().is_some()),
+    };
+    if !viewer {
         return Err(ProjectionError::Inconsistent("viewer context"));
     }
     if ids.player_ids.len() != players
@@ -169,6 +173,7 @@ fn build(
         return Err(ProjectionError::Inconsistent("end cause without result"));
     }
     if observation.outcome.is_none()
+        && view.me().is_some()
         && (view.pending().is_some() != (observation.deciding == view.me()))
     {
         return Err(ProjectionError::Inconsistent(
@@ -578,7 +583,7 @@ fn build(
                 })
                 .collect();
             if z.wire.kind == zone::HAND {
-                z.wire.is_visible = Some(PlayerId(z.wire.owner as u8)) == view.me();
+                z.wire.is_visible = view.player(PlayerId(z.wire.owner as u8)).hand().is_some();
             }
             Ok(z.wire)
         })

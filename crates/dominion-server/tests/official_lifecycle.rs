@@ -865,6 +865,80 @@ async fn a_table_with_a_card_their_client_lacks_is_refused_once_without_closing(
 }
 
 #[tokio::test]
+async fn an_account_without_a_seat_watches_a_running_game_and_leaves_it() {
+    let server = Server::new(catalog()).await;
+    let a = server.arena.identify(&server.account("Alice")).unwrap();
+    let b = server.arena.identify(&server.account("Bobby")).unwrap();
+    server.account("Wendy");
+    let mut spec = server.spec();
+    spec.randomize_order = false;
+    let table = server
+        .arena
+        .new_table(&a, &NewTable { spec, seats: None })
+        .unwrap();
+    server.arena.join_table(&b, &table.id, None).unwrap();
+    server.arena.ready(&a, &table.id, true).unwrap();
+    server
+        .arena
+        .ready(&b, &table.id, true)
+        .unwrap()
+        .game
+        .unwrap();
+    let wire_table: i64 = table.id[1..].parse().unwrap();
+    let mut client = server.socket("/").await;
+    let me = client.login("Wendy").await.player_id;
+    client.send(Command::RequestUpdate { kind: 3 }).await;
+    let tables = client
+        .until(|m| matches!(m, ServerMessage::Tables(_)))
+        .await;
+    assert!(tables.iter().any(|m| matches!(m, ServerMessage::Tables(t)
+        if t.iter().any(|s| s.table_id == wire_table && s.observable))));
+    client
+        .send(Command::JoinTable {
+            table: wire_table,
+            as_player: false,
+        })
+        .await;
+    let joined = client
+        .until(|m| matches!(m, ServerMessage::Snapshot(_)))
+        .await;
+    assert!(
+        joined
+            .iter()
+            .any(|m| matches!(m, ServerMessage::TableJoined { table, .. }
+        if table.spectators.iter().any(|s| s.id == me)))
+    );
+    assert!(
+        joined
+            .iter()
+            .any(|m| matches!(m, ServerMessage::GameStarted { .. }))
+    );
+    let Some(ServerMessage::Snapshot(snapshot)) = joined
+        .iter()
+        .find(|m| matches!(m, ServerMessage::Snapshot(_)))
+    else {
+        unreachable!()
+    };
+    for hand in snapshot.state.zones.iter().filter(|z| z.kind == 0) {
+        assert!(hand.is_visible && hand.cards.iter().all(|&c| c >= 0));
+    }
+    assert!(
+        !joined
+            .iter()
+            .any(|m| matches!(m, ServerMessage::Question(_)))
+    );
+    client
+        .send(Command::LeaveTable {
+            table: wire_table,
+            player: me,
+        })
+        .await;
+    client
+        .until(|m| matches!(m, ServerMessage::PlayerLeft { player_id, .. } if *player_id == me))
+        .await;
+}
+
+#[tokio::test]
 async fn retained_result_policy_is_independent_of_next_table_rules_and_leave_clears_membership() {
     let server = Server::new(catalog()).await;
     let a = server.arena.identify(&server.account("Alice")).unwrap();

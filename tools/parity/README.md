@@ -104,4 +104,6 @@ Village)"). When their client looks wrong, fix the projection, not our client.
   deck, so our deck composition window has nothing to be compared with.
 - A score page (after the end notice's Ok, `{ button: 'Ok' }`) is compared without its
   chat: their side bar's chat and Copy Chat have no counterpart in ours.
-- Their client can't watch as a spectator: the transport has no spectator membership.
+- A scenario with `watch` has both clients watch the game as an account with no seat
+  (Wendy): theirs from its Tables tab's Spectate, ours at `/game/<id>`
+  (`spectator-midgame`).

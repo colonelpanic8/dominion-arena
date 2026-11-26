@@ -87,6 +87,17 @@ export async function enterTheirs(page, arena, name, password) {
   await page.click('.login-button');
 }
 
+/// Has dominion.games' client, signed in with no seat, watch the running game from its
+/// lobby's Tables tab.
+export async function spectateTheirs(page) {
+  const tab = page.getByText('Tables', { exact: true }).first();
+  await tab.waitFor({ timeout: 30000 });
+  await tab.click();
+  const spectate = page.locator('.table-line-spectate-button:not(.disabled-button)').first();
+  await spectate.waitFor({ timeout: 30000 });
+  await spectate.click();
+}
+
 /// Our client at `/game/<id>`, signed in as the account.
 export async function openOurs(browser, arena, cookie, viewport) {
   const context = await browser.newContext({ viewport });

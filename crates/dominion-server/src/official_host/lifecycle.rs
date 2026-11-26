@@ -42,7 +42,9 @@ struct Principal {
     _check: Arc<StartCheck>,
 }
 struct Playing {
-    seat: Seat,
+    game: String,
+    /// `None` for a spectator.
+    seat: Option<Seat>,
     connected: Option<Connection>,
     feed: watch::Receiver<u64>,
     stamp: Option<(Option<String>, u64, bool)>,
@@ -60,6 +62,8 @@ struct Session {
     table_details: Option<transport::TableDetails>,
     /// The last refusal explained, so a refresh doesn't repeat it.
     refused: Option<String>,
+    /// The game this account joined a table to watch (Arena keeps no such membership).
+    spectating: Option<String>,
     playing: Option<Playing>,
     active: Option<PreparedQuestion>,
     question_index: i32,
@@ -124,6 +128,29 @@ impl Session {
         .await
     }
 
+    /// The account as a spectator is named.
+    fn spectator(&self) -> Result<transport::NamedId> {
+        let ident = self.authorized()?.ident.clone();
+        Ok(transport::NamedId {
+            id: self.own_id()?,
+            name: self
+                .arena
+                .name_of(&ident)
+                .map_err(|_| Failure(1008, "account unavailable"))?,
+        })
+    }
+    /// The context `playing` is projected in: its seat's, or a spectator's.
+    fn context_of(&self, playing: &Playing) -> Result<super::identity::HostGameContext> {
+        match &playing.seat {
+            Some(seat) => context::context(&self.arena, seat, &self.host),
+            None => context::viewer_context(
+                &self.arena,
+                context::Viewer::Spectator(&playing.game, self.spectator()?),
+                &self.host,
+            ),
+        }
+        .map_err(|_| Failure(1008, "game context unavailable"))
+    }
     /// [`Self::explain`], unless this refusal was the last one explained.
     async fn refuse(
         &mut self,
@@ -231,6 +258,9 @@ impl Session {
                 )
                 .await?;
             }
+            if table_id.is_some() {
+                self.spectating = None;
+            }
             self.table = table_id;
             self.table_details = None;
             self.refused = None;
@@ -271,10 +301,12 @@ impl Session {
                 .or_else(|| {
                     self.playing
                         .as_ref()
-                        .filter(|p| Some(&p.seat.game) == table.last_game.as_ref())
-                        .map(|p| p.seat.game.clone())
+                        .filter(|p| Some(&p.game) == table.last_game.as_ref())
+                        .map(|p| p.game.clone())
                 })
                 .or_else(|| if force { table.last_game.clone() } else { None })
+        } else if let Some(game) = &self.spectating {
+            Some(game.clone())
         } else if self.playing.is_none() && force && !left_table {
             lobby
                 .games
@@ -283,11 +315,11 @@ impl Session {
                 .or_else(|| lobby.games.first())
                 .map(|g| g.game_id.clone())
         } else if self.table.is_none() {
-            self.playing.as_ref().map(|p| p.seat.game.clone())
+            self.playing.as_ref().map(|p| p.game.clone())
         } else {
             None
         };
-        if desired.as_deref() != self.playing.as_ref().map(|p| p.seat.game.as_str()) {
+        if desired.as_deref() != self.playing.as_ref().map(|p| p.game.as_str()) {
             self.active = None;
             self.playing = None;
             self.epoch = self
@@ -300,8 +332,10 @@ impl Session {
                     .hub
                     .owned_in(&game, &ident.user)
                     .into_iter()
-                    .next()
-                    .ok_or(Failure(1008, "game seat unavailable"))?;
+                    .next();
+                if seat.is_none() && self.spectating.as_ref() != Some(&game) {
+                    return Err(Failure(1008, "game seat unavailable"));
+                }
                 let supported =
                     self.arena
                         .hub
@@ -331,13 +365,21 @@ impl Session {
                     .subscribe(&game)
                     .map_err(|_| Failure(1008, "game unavailable"))?
                     .version;
-                let connected = self
-                    .arena
-                    .hub
-                    .connect(&seat)
+                let connected = seat
+                    .as_ref()
+                    .map(|seat| self.arena.hub.connect(seat))
+                    .transpose()
                     .map_err(|_| Failure(1008, "game unavailable"))?;
-                let context = context::context(&self.arena, &seat, &self.host)
-                    .map_err(|_| Failure(1008, "identity unavailable"))?;
+                let playing = Playing {
+                    game,
+                    seat,
+                    connected,
+                    feed,
+                    stamp: None,
+                    initialized: false,
+                    version: 0,
+                };
+                let context = self.context_of(&playing)?;
                 if self.table.is_none() {
                     self.messages(
                         socket,
@@ -356,14 +398,7 @@ impl Session {
                     }],
                 )
                 .await?;
-                self.playing = Some(Playing {
-                    seat,
-                    connected: Some(connected),
-                    feed,
-                    stamp: None,
-                    initialized: false,
-                    version: 0,
-                });
+                self.playing = Some(playing);
             }
         }
         self.game_update(socket, force).await?;
@@ -383,9 +418,9 @@ impl Session {
             return Ok(());
         };
         let seat = playing.seat.clone();
+        let game = playing.game.clone();
         let initialized = playing.initialized;
-        let context = context::context(&self.arena, &seat, &self.host)
-            .map_err(|_| Failure(1008, "game context unavailable"))?;
+        let context = self.context_of(playing)?;
         if context.table_options.timed
             || context.table_options.undo != dominion_protocol::lobby::UndoRule::Off
         {
@@ -399,33 +434,34 @@ impl Session {
             .checked_add(1)
             .ok_or(Failure(1011, "question index exhausted"))?;
         let previous = playing.stamp.clone();
-        let (version, stamp, projected) = self
-            .arena
-            .hub
-            .project_seat(&seat, |o| {
-                let stamp = (
-                    o.decision_id.map(str::to_string),
-                    o.undos,
-                    o.outcome.is_some(),
-                );
-                let version = o.version;
-                let update = if !force && previous.as_ref() == Some(&stamp) {
-                    None
-                } else {
-                    Some(projection::project(
-                        o,
-                        &context,
-                        &self.host.catalog,
-                        ProjectionRequest {
-                            question_index,
-                            reconnect: initialized,
-                            epoch: self.epoch,
-                        },
-                    ))
-                };
-                (version, stamp, update)
-            })
-            .map_err(|_| Failure(1008, "game unavailable"))?;
+        let observe = |o: crate::hub::SeatObservation<'_>| {
+            let stamp = (
+                o.decision_id.map(str::to_string),
+                o.undos,
+                o.outcome.is_some(),
+            );
+            let version = o.version;
+            let update = if !force && previous.as_ref() == Some(&stamp) {
+                None
+            } else {
+                Some(projection::project(
+                    o,
+                    &context,
+                    &self.host.catalog,
+                    ProjectionRequest {
+                        question_index,
+                        reconnect: initialized,
+                        epoch: self.epoch,
+                    },
+                ))
+            };
+            (version, stamp, update)
+        };
+        let (version, stamp, projected) = match &seat {
+            Some(seat) => self.arena.hub.project_seat(seat, observe),
+            None => self.arena.hub.project_watch(&game, observe),
+        }
+        .map_err(|_| Failure(1008, "game unavailable"))?;
         if let Some(playing) = &mut self.playing {
             playing.version = version;
         }
@@ -477,7 +513,7 @@ impl Session {
             channels.push(format!("table-{table}"));
         }
         if let Some(game) = &self.playing {
-            channels.push(format!("game-{}", game.seat.game));
+            channels.push(format!("game-{}", game.game));
         }
         let mut messages = vec![];
         for channel in channels {
@@ -489,7 +525,7 @@ impl Session {
                 } else if channel.starts_with("game-") {
                     self.playing
                         .as_ref()
-                        .and_then(|p| context::context(&self.arena, &p.seat, &self.host).ok())
+                        .and_then(|p| self.context_of(p).ok())
                         .map(|c| format!("t{}", c.wire_ids.table_id))
                         .unwrap_or_else(|| "lobby".into())
                 } else {
@@ -647,11 +683,25 @@ impl Session {
                 .and_then(|id| self.arena.join_table(&ident, &id, None))
                 .map(|_| ()),
             LifecycleCommand::JoinTable {
-                as_player: false, ..
+                table,
+                as_player: false,
+            } => match self.watchable_game(table) {
+                Ok(game) => {
+                    self.spectating = Some(game);
+                    Ok(())
+                }
+                Err(error) => Err(error),
+            },
+            LifecycleCommand::StandUp { table, .. } => {
+                if self.spectated_table() == Some(table) {
+                    self.stop_spectating(socket).await?;
+                    Ok(())
+                } else {
+                    Err(arena::Error::BadRequest(
+                        "a seated player can't stand up to watch in Arena".into(),
+                    ))
+                }
             }
-            | LifecycleCommand::StandUp { .. } => Err(arena::Error::BadRequest(
-                "Arena has no spectator table membership".into(),
-            )),
             LifecycleCommand::ChangeTableRule { table, rule } => identity::canonical(table, 't')
                 .map_err(arena::Error::BadRequest)
                 .and_then(|id| match (&rule.value, rule.id) {
@@ -675,6 +725,9 @@ impl Session {
                             self.arena.remove_player(&ident, &table, &target)
                         })
                         .map(|_| ())
+                } else if self.spectated_table() == Some(table) {
+                    self.stop_spectating(socket).await?;
+                    Ok(())
                 } else if identity::canonical(table, 't').ok().as_ref() != self.table.as_ref() {
                     Err(arena::Error::Forbidden(
                         "only your current membership can be left".into(),
@@ -757,25 +810,18 @@ impl Session {
                 let channel = match receiver.as_str() {
                     "lobby" => Some("lobby".to_string()),
                     "table" => self.table.as_ref().map(|t| format!("table-{t}")),
-                    "game" => self
-                        .playing
-                        .as_ref()
-                        .map(|p| format!("game-{}", p.seat.game)),
+                    "game" => self.playing.as_ref().map(|p| format!("game-{}", p.game)),
                     _ if receiver.starts_with('t') => {
                         let table = identity::number(&receiver, 't').ok();
                         let game = self
                             .playing
                             .as_ref()
                             .filter(|p| p.stamp.as_ref().is_none_or(|s| !s.2))
-                            .and_then(|p| {
-                                context::context(&self.arena, &p.seat, &self.host)
-                                    .ok()
-                                    .map(|c| (p, c))
-                            });
+                            .and_then(|p| self.context_of(p).ok().map(|c| (p, c)));
                         if let Some((playing, context)) = game
                             && Some(context.wire_ids.table_id) == table
                         {
-                            Some(format!("game-{}", playing.seat.game))
+                            Some(format!("game-{}", playing.game))
                         } else {
                             Some(format!("table-{receiver}"))
                         }
@@ -785,17 +831,21 @@ impl Session {
                 match channel {
                     Some(channel) if channel.starts_with("game-") => {
                         if let Some(playing) = &self.playing
-                            && channel == format!("game-{}", playing.seat.game)
+                            && channel == format!("game-{}", playing.game)
                         {
                             let name = self
                                 .arena
                                 .name_of(&ident)
                                 .map_err(|_| Failure(1008, "account unavailable"))?;
                             self.arena.say_in_game(
-                                &playing.seat.game,
+                                &playing.game,
                                 &ident.user,
                                 &name,
-                                ChatKind::Player,
+                                if playing.seat.is_some() {
+                                    ChatKind::Player
+                                } else {
+                                    ChatKind::Watcher
+                                },
                                 &text,
                             )
                         } else {
@@ -828,6 +878,53 @@ impl Session {
         }
         self.refresh(socket, false).await?;
         Ok(true)
+    }
+    /// The running, watchable game at table `table`, for a spectator to join.
+    fn watchable_game(&self, table: i64) -> arena::Result<String> {
+        if self.table.is_some() {
+            return Err(arena::Error::Conflict(
+                "leave your table before watching another".into(),
+            ));
+        }
+        let id = identity::canonical(table, 't').map_err(arena::Error::BadRequest)?;
+        let game = self
+            .arena
+            .table(&id)?
+            .game
+            .ok_or_else(|| arena::Error::Conflict("the table's game hasn't started".into()))?;
+        let meta = self
+            .arena
+            .hub
+            .meta(&game)
+            .map_err(|e| arena::Error::NotFound(e.to_string()))?;
+        if !meta.watchable {
+            return Err(arena::Error::Forbidden("this game can't be watched".into()));
+        }
+        Ok(game)
+    }
+    /// The wire table id of the game this account is watching.
+    fn spectated_table(&self) -> Option<i64> {
+        let playing = self.playing.as_ref().filter(|p| p.seat.is_none())?;
+        self.context_of(playing).ok().map(|c| c.wire_ids.table_id)
+    }
+    /// Leaves the table watched: their client goes back to the lobby.
+    async fn stop_spectating(&mut self, socket: &mut WebSocket) -> Result<()> {
+        let table_id = self.spectated_table();
+        self.spectating = None;
+        self.playing = None;
+        self.active = None;
+        if let Some(table_id) = table_id {
+            let player_id = self.own_id()?;
+            self.messages(
+                socket,
+                &[Message::PlayerLeft {
+                    table_id,
+                    player_id,
+                }],
+            )
+            .await?;
+        }
+        Ok(())
     }
     fn table_player(&self, table: i64, player: i32) -> arena::Result<(String, String)> {
         let id = identity::canonical(table, 't').map_err(arena::Error::BadRequest)?;
@@ -866,11 +963,10 @@ impl Session {
                     .active
                     .as_ref()
                     .and_then(|p| p.resolve_at(self.epoch, question, &values).ok());
-                let result = match (&self.playing, &self.active, response) {
-                    (Some(game), Some(plan), Some(response)) => {
-                        self.arena
-                            .hub
-                            .respond(&game.seat, &plan.decision_id, response)
+                let seat = self.playing.as_ref().and_then(|p| p.seat.as_ref());
+                let result = match (seat, &self.active, response) {
+                    (Some(seat), Some(plan), Some(response)) => {
+                        self.arena.hub.respond(seat, &plan.decision_id, response)
                     }
                     _ => return self.reject(socket, "ILLEGAL_ANSWER").await,
                 };
@@ -882,10 +978,10 @@ impl Session {
                 self.refresh(socket, false).await
             }
             ClientCommand::Resign => {
-                if let Some(game) = &self.playing {
+                if let Some(seat) = self.playing.as_ref().and_then(|p| p.seat.as_ref()) {
                     self.arena
                         .hub
-                        .resign(&game.seat, "resigned")
+                        .resign(seat, "resigned")
                         .map_err(|_| Failure(1008, "game unavailable"))?;
                 } else {
                     return self.reject(socket, "COMMAND_REQUIRES_GAME").await;
@@ -951,6 +1047,7 @@ pub(crate) async fn run(
         table: None,
         table_details: None,
         refused: None,
+        spectating: None,
         playing: None,
         active: None,
         question_index: 0,

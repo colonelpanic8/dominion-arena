@@ -18,7 +18,7 @@ pub(crate) struct WireIdentity {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ViewerRole {
     Player(usize),
-    #[allow(dead_code)] // Reserved for canonical observer membership; joins currently refuse it.
+    /// Watching without a seat: every player's held cards face up, no question.
     Spectator,
 }
 

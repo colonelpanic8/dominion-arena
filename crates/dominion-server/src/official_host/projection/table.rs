@@ -7,9 +7,6 @@ use dominion_engine::{Kind, Note, PileId, PileView, Set, SetupRole, Token};
 /// Refuses what the transport can't show yet.
 pub(super) fn validate(view: &View<'_>) -> Result<(), ProjectionError> {
     let gap = |feature: String| Err(ProjectionError::UnsupportedState(feature));
-    if view.me().is_none() {
-        return gap("spectator visibility policy".into());
-    }
     if let Some(note) = view.notes().iter().find(|n| !shown(view, n)) {
         return gap(format!("{} note", note.source.name()));
     }

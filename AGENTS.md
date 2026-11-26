@@ -636,7 +636,9 @@ them.
   `Knowledge::with_watcher` also keeps the mind of a viewer who is no player
   (`Game::watch()` is their `View`): they follow exactly what is public.
   `Table::watch_view` adds full visibility of player-owned cards for spectators,
-  without changing the engine watcher or any seated player's knowledge. The fuzz test
+  without changing the engine watcher or any seated player's knowledge; `Game::spectate`
+  is the engine `View` that shows every player's held cards so (the official transport's
+  spectators). The fuzz test
   holds what they know to the truth, and the twin worlds to their knowing the same
   wherever some player observed the same. `Game::resign` ends a game where it stands, out of band: the
   resigner is last, and nothing is logged.

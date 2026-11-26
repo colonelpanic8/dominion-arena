@@ -116,7 +116,11 @@ thresholds). The client is told each player's time after every change, with the 
 one ticking, and a player whose time runs out is shown as timed out. Other timers, undo
 policies, live total-VP display, spectator table roles,
 automatch and other unmapped rules/operations receive protocol failures. They are not
-silently accepted. Native-only tables retain their usual policies. Every game uses Hub's
+silently accepted. An account without a seat can watch a table's running game when it
+is watchable (Spectate on the Tables tab): every player's hand face up, no questions, its
+chat as someone watching; Leave Table goes back to the lobby. A table using a card the
+client lacks (the first-edition cards removed in second editions) is refused with
+"Error setting up the kingdom." and the connection stays open. Native-only tables retain their usual policies. Every game uses Hub's
 existing transaction, persistence and completion hook; native and binary participants
 share seats, chat and records. After restart, retained owned games reconnect using a
 read-only detached table context; old lobby membership is not recreated.

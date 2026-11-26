@@ -47,7 +47,10 @@ fn project(
     let context = HostGameContext {
         wire_ids: ids.clone(),
         table_details: table,
-        viewer_role: ViewerRole::Player(observation.view.me().map_or(usize::MAX, PlayerId::index)),
+        viewer_role: observation
+            .view
+            .me()
+            .map_or(ViewerRole::Spectator, |p| ViewerRole::Player(p.index())),
         table_options: dominion_protocol::lobby::TableSpec {
             timed: false,
             rated: false,
@@ -979,6 +982,43 @@ fn spectators_invalid_fixed_identities_and_oversized_public_values_are_refused()
     }
     assert!(project(observed(game.view(PlayerId(0))), &ids(), &catalog, 0, false).is_err());
     assert!(integer(65_537, "zone").is_err());
+}
+
+#[test]
+fn a_spectator_is_shown_every_hand_face_up_and_asked_nothing() {
+    let game = Game::new(config()).unwrap();
+    let catalog = catalog();
+    let known = KnownCards::default();
+    let names = ["Ada".into(), "Bob".into()];
+    let observed = |view| hub::SeatObservation {
+        clock: None,
+        view,
+        known: &known,
+        names: &names,
+        decision_id: Some("d"),
+        deciding: game.pending().map(|d| d.player),
+        version: 0,
+        undos: 0,
+        outcome: None,
+        ended: None,
+    };
+    let update = project(observed(game.spectate()), &ids(), &catalog, 1, false).unwrap();
+    assert!(update.question.is_none());
+    let hands: Vec<_> = update
+        .snapshot
+        .state
+        .zones
+        .iter()
+        .filter(|z| z.kind == zone::HAND)
+        .collect();
+    assert_eq!(hands.len(), 2);
+    for hand in hands {
+        assert!(hand.is_visible);
+        assert_eq!(hand.cards.len(), 5);
+        assert!(hand.cards.iter().all(|&c| c >= 0));
+    }
+    // Someone watching who sees no hands isn't a spectator.
+    assert!(project(observed(game.watch()), &ids(), &catalog, 1, false).is_err());
 }
 
 #[test]

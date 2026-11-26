@@ -6,13 +6,33 @@ use crate::{arena::Arena, hub::Seat};
 use dominion_online::transport::{NamedId, TableDetails};
 use dominion_protocol::lobby::UserKind;
 
+/// Who a game is projected for.
+pub(crate) enum Viewer<'a> {
+    Seat(&'a Seat),
+    /// Someone watching game `.0` without a seat, as `.1`.
+    Spectator(&'a str, NamedId),
+}
+
 pub(crate) fn context(arena: &Arena, seat: &Seat, host: &Host) -> Result<HostGameContext, String> {
-    let meta = arena.hub.meta(&seat.game).map_err(|e| e.to_string())?;
-    let game_id = identity::number(&seat.game, 'g')?;
-    let names = arena
-        .hub
-        .project_seat(seat, |o| o.names.to_vec())
-        .map_err(|e| e.to_string())?;
+    viewer_context(arena, Viewer::Seat(seat), host)
+}
+
+pub(crate) fn viewer_context(
+    arena: &Arena,
+    viewer: Viewer<'_>,
+    host: &Host,
+) -> Result<HostGameContext, String> {
+    let game = match &viewer {
+        Viewer::Seat(seat) => seat.game.as_str(),
+        Viewer::Spectator(game, _) => game,
+    };
+    let meta = arena.hub.meta(game).map_err(|e| e.to_string())?;
+    let game_id = identity::number(game, 'g')?;
+    let names = match &viewer {
+        Viewer::Seat(seat) => arena.hub.project_seat(seat, |o| o.names.to_vec()),
+        Viewer::Spectator(..) => arena.hub.project_watch(game, |o| o.names.to_vec()),
+    }
+    .map_err(|e| e.to_string())?;
     let player_ids = meta
         .owners
         .iter()
@@ -36,7 +56,7 @@ pub(crate) fn context(arena: &Arena, seat: &Seat, host: &Host) -> Result<HostGam
         undo: meta.undo,
         ..super::rules::defaults()
     };
-    let table_details = match table {
+    let mut table_details = match table {
         Some(table) => super::rules::details(arena, &table, host)?,
         None => {
             let table_id = match &meta.table {
@@ -66,6 +86,13 @@ pub(crate) fn context(arena: &Arena, seat: &Seat, host: &Host) -> Result<HostGam
             }
         }
     };
+    let viewer_role = match viewer {
+        Viewer::Seat(seat) => ViewerRole::Player(usize::from(seat.seat.0)),
+        Viewer::Spectator(_, me) => {
+            table_details.spectators.push(me);
+            ViewerRole::Spectator
+        }
+    };
     Ok(HostGameContext {
         wire_ids: WireIdentity {
             game_id,
@@ -74,6 +101,6 @@ pub(crate) fn context(arena: &Arena, seat: &Seat, host: &Host) -> Result<HostGam
         },
         table_details,
         table_options,
-        viewer_role: ViewerRole::Player(usize::from(seat.seat.0)),
+        viewer_role,
     })
 }

@@ -2020,6 +2020,42 @@ impl Hub {
         })
     }
 
+    /// [`Hub::project_seat`] for a spectator of game `id`: every player's held cards face
+    /// up ([`dominion_engine::Game::spectate`]) and what someone watching knows.
+    /// Refused unless the game can be watched.
+    pub(crate) fn project_watch<T>(
+        &self,
+        id: &str,
+        project: impl for<'a> FnOnce(SeatObservation<'a>) -> T,
+    ) -> Result<T, HubError> {
+        let game = self.read(id)?;
+        let table = lock(&game.table);
+        let meta = lock(&game.meta);
+        let refused = || HubError::Forbidden(format!("game {id} can't be watched"));
+        if !meta.watchable {
+            return Err(refused());
+        }
+        engine(|| {
+            let known = table
+                .knowledge()
+                .watched(table.game())
+                .ok_or_else(refused)?;
+            let decision = table.decision_id();
+            Ok(project(SeatObservation {
+                view: table.game().spectate(),
+                clock: game.clock(&meta, now_ms()),
+                known: &known,
+                names: table.names(),
+                decision_id: decision.as_deref(),
+                deciding: table.deciding(),
+                version: *game.version.borrow(),
+                undos: table.undos(),
+                outcome: table.game().outcome(),
+                ended: meta.ended.as_deref(),
+            }))
+        })?
+    }
+
     pub(crate) fn admission<T>(
         &self,
         id: &str,

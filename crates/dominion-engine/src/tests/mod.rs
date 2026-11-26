@@ -560,6 +560,26 @@ fn view_hides_hidden_information() {
     assert_eq!(g.view(P1).card(buried[0]), None);
 }
 
+#[test]
+fn a_spectator_sees_every_hand_but_no_deck_or_buried_discard() {
+    let mut g = setup(&[Card::Harbinger]);
+    hand(&mut g, P0, &[Card::Harbinger, Card::Copper]);
+    deck(&mut g, P0, &[Card::Silver, Card::Gold]);
+    let buried = discard(&mut g, P0, &[Card::Duchy, Card::Estate]);
+    let theirs = g.hand(P1).to_vec();
+    g.start();
+    let v = g.spectate();
+    assert_eq!(v.me(), None);
+    assert!(v.pending().is_none());
+    for p in [P0, P1] {
+        assert_eq!(v.player(p).hand(), Some(g.hand(p)));
+    }
+    assert_eq!(v.card(theirs[0]), Some(g.card(theirs[0])));
+    assert_eq!(g.watch().card(theirs[0]), None);
+    assert_eq!(v.card(buried[0]), None);
+    assert_eq!(v.card(g.player(P0).deck[0]), None);
+}
+
 /// A question about cards the player looks at shows them those cards, and only them.
 #[test]
 fn a_question_about_looked_at_cards_shows_them() {

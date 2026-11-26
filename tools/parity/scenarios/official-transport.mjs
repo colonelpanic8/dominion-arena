@@ -24,4 +24,11 @@ export const OFFICIAL_TRANSPORT = [
     steps: [],
     refused: 'Error setting up the kingdom.',
   },
+  {
+    name: 'spectator-midgame',
+    about: 'a game watched without a seat: every hand face up',
+    spec: { kingdom: ['Village', 'Smithy', 'Market', 'Moat', 'Militia', 'Cellar', 'Festival', 'Laboratory', 'Workshop', 'Remodel'] },
+    steps: ['turns 6 Gold, Laboratory, Silver'],
+    watch: true,
+  },
 ];

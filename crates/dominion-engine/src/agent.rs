@@ -61,12 +61,15 @@ pub fn play<'g>(
 /// A deck's order is never shown, nor which cards are in a discard pile under its top,
 /// nor any card of a face-down pile (the Black Market deck, Loot).
 ///
-/// Someone watching without a seat ([`Game::watch`]) sees only what is public.
+/// Someone watching without a seat ([`Game::watch`]) sees only what is public; a
+/// spectator ([`Game::spectate`]) also what each player holds.
 #[derive(Clone, Copy)]
 pub struct View<'a> {
     game: &'a Game,
     /// `None` for someone watching.
     me: Option<PlayerId>,
+    /// Every player's held cards are shown, as to a spectator.
+    held_shown: bool,
 }
 
 impl Game {
@@ -74,6 +77,7 @@ impl Game {
         View {
             game: self,
             me: Some(player),
+            held_shown: false,
         }
     }
 
@@ -82,6 +86,18 @@ impl Game {
         View {
             game: self,
             me: None,
+            held_shown: false,
+        }
+    }
+
+    /// The game as a spectator of a table sees it: [`Game::watch`] with every player's
+    /// hand, face-down set-aside cards, cards they look at and Native Village mat face up.
+    /// Their decks stay hidden, and nobody else's knowledge changes.
+    pub fn spectate(&self) -> View<'_> {
+        View {
+            game: self,
+            me: None,
+            held_shown: true,
         }
     }
 }
@@ -241,17 +257,23 @@ impl<'a> View<'a> {
         self.game.cost(card)
     }
 
+    /// Whether this viewer sees what `p` holds: their hand, face-down cards, Native
+    /// Village mat.
+    fn sees_held(&self, p: PlayerId) -> bool {
+        Some(p) == self.me || self.held_shown
+    }
+
     fn visible(&self, id: CardId) -> bool {
         let g = self.game;
         let seen = match g.zone(id) {
-            Zone::Hand(p) => Some(p) == self.me,
+            Zone::Hand(p) => self.sees_held(p),
             Zone::SetAside(p) | Zone::Looking(p) => {
-                Some(p) == self.me || g.player(p).face_up.contains(&id)
+                self.sees_held(p) || g.player(p).face_up.contains(&id)
             }
             Zone::InPlay(_) | Zone::Trash => true,
             Zone::Discard(p) => g.player(p).discard.last() == Some(&id),
             Zone::Pile(pile) => !g.pile(pile).hidden && g.pile_top(pile) == Some(id),
-            Zone::Mat(p, mat) => mat != Mat::NativeVillage || Some(p) == self.me,
+            Zone::Mat(p, mat) => mat != Mat::NativeVillage || self.sees_held(p),
             Zone::Deck(_) => false,
         };
         seen || self.offered(id)
@@ -430,7 +452,9 @@ impl<'a> PlayerView<'a> {
 
     /// Their hand, if the viewer may see it.
     pub fn hand(&self) -> Option<&'a [CardId]> {
-        (Some(self.id) == self.view.me).then_some(&self.player.hand[..])
+        self.view
+            .sees_held(self.id)
+            .then_some(&self.player.hand[..])
     }
 
     pub fn hand_size(&self) -> usize {
@@ -487,7 +511,7 @@ impl<'a> PlayerView<'a> {
     /// The cards on one of their mats, if the viewer may see them (the Native Village mat
     /// is its owner's only).
     pub fn mat(&self, mat: Mat) -> Option<&'a [CardId]> {
-        (mat != Mat::NativeVillage || Some(self.id) == self.view.me).then(|| self.player.mat(mat))
+        (mat != Mat::NativeVillage || self.view.sees_held(self.id)).then(|| self.player.mat(mat))
     }
 
     pub fn mat_size(&self, mat: Mat) -> usize {
