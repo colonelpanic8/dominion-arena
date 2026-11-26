@@ -89,6 +89,11 @@ Village)"). When their client looks wrong, fix the projection, not our client.
   Inheritance's Estate token, more than one Trait on a pile, and Shelters chosen at the
   table. When their client refuses a game, its console log
   (`theirs-console.log`) says why.
+- Their client has none of the first-edition cards removed in second editions
+  (Adventurer, Chancellor, Feast, Spy, Thief, Woodcutter, Coppersmith, Great Hall,
+  Saboteur, Scout, Secret Chamber, Tribute): a table using one is refused, and their
+  lobby says "Error setting up the kingdom." A scenario's `refused` waits for that text
+  instead of the game (`first-edition-refused`).
 - Their client joins each game already in progress, and some of what it draws then
   differs from a game it watched being played: it lays out a snapshot's cards before
   reading their statuses, so a Duration from last turn stacks with a copy played this

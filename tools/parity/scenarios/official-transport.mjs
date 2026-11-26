@@ -17,4 +17,11 @@ export const OFFICIAL_TRANSPORT = [
     after: ['resign Bob'],
     show: [{ button: 'Ok' }],
   },
+  {
+    name: 'first-edition-refused',
+    about: "first-edition cards their client doesn't have: its lobby refuses the game",
+    spec: { kingdom: ['Adventurer', 'Chancellor', 'Feast', 'Spy', 'Thief', 'Woodcutter', 'Coppersmith', 'Great Hall', 'Saboteur', 'Tribute'] },
+    steps: [],
+    refused: 'Error setting up the kingdom.',
+  },
 ];

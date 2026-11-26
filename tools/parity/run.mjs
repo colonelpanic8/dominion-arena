@@ -111,8 +111,17 @@ async function runScenario(scenario) {
     });
     theirs.page.on('pageerror', (e) => log.write(`ERROR ${e.stack ?? e.message}\n`));
     await enterTheirs(theirs.page, arena, players[0], PASSWORD);
-    for (let i = 0; i < 300 && !loaded; i++) await new Promise((r) => setTimeout(r, 100));
-    if (!loaded) throw new Error(`their client never loaded the game; see ${dir}/theirs-console.log`);
+    if (scenario.refused) {
+      // A game their client can't have: its lobby shows why instead.
+      await theirs.page
+        .waitForFunction((text) => document.body.innerText.includes(text), scenario.refused, { timeout: 30000 })
+        .catch(() => {
+          throw new Error(`their client never said "${scenario.refused}"; see ${dir}/theirs-console.log`);
+        });
+    } else {
+      for (let i = 0; i < 300 && !loaded; i++) await new Promise((r) => setTimeout(r, 100));
+      if (!loaded) throw new Error(`their client never loaded the game; see ${dir}/theirs-console.log`);
+    }
 
     const ours = await openOurs(browser, arena, alice, vp);
     contexts.push(ours.context);

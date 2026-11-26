@@ -58,6 +58,8 @@ struct Session {
     principal: Option<Principal>,
     table: Option<String>,
     table_details: Option<transport::TableDetails>,
+    /// The last refusal explained, so a refresh doesn't repeat it.
+    refused: Option<String>,
     playing: Option<Playing>,
     active: Option<PreparedQuestion>,
     question_index: i32,
@@ -120,6 +122,20 @@ impl Session {
             ],
         )
         .await
+    }
+
+    /// [`Self::explain`], unless this refusal was the last one explained.
+    async fn refuse(
+        &mut self,
+        socket: &mut WebSocket,
+        reason: &'static str,
+        detail: String,
+    ) -> Result<()> {
+        if self.refused.as_ref() == Some(&detail) {
+            return Ok(());
+        }
+        self.refused = Some(detail.clone());
+        self.explain(socket, reason, detail).await
     }
 
     async fn authenticate(
@@ -217,10 +233,20 @@ impl Session {
             }
             self.table = table_id;
             self.table_details = None;
+            self.refused = None;
         }
-        if let Some(table) = table {
-            let details = rules::details(&self.arena, table, &self.host)
-                .map_err(|_| Failure(1008, "table is not representable"))?;
+        // A table their client can't show (a card it doesn't have) is refused, and so is
+        // its game: their lobby says the kingdom couldn't be set up.
+        let details = match table.map(|t| rules::details(&self.arena, t, &self.host)) {
+            Some(Err(error)) => {
+                self.refuse(socket, "COULD_NOT_CREATE_KINGDOM", error)
+                    .await?;
+                None
+            }
+            details => details.and_then(std::result::Result::ok),
+        };
+        let representable = table.is_none() || details.is_some();
+        if let Some(details) = details {
             if self.table_details.is_none() {
                 self.messages(
                     socket,
@@ -236,7 +262,9 @@ impl Session {
             }
             self.table_details = Some(details);
         }
-        let desired = if let Some(table) = table {
+        let desired = if !representable {
+            None
+        } else if let Some(table) = table {
             table
                 .game
                 .clone()
@@ -293,9 +321,10 @@ impl Session {
                         .map_err(|_| Failure(1008, "game unavailable"))?;
                 if let Err(error) = supported {
                     return self
-                        .explain(socket, "COULD_NOT_CREATE_KINGDOM", error.to_string())
+                        .refuse(socket, "COULD_NOT_CREATE_KINGDOM", error.to_string())
                         .await;
                 }
+                self.refused = None;
                 let feed = self
                     .arena
                     .hub
@@ -921,6 +950,7 @@ pub(crate) async fn run(
         principal: None,
         table: None,
         table_details: None,
+        refused: None,
         playing: None,
         active: None,
         question_index: 0,

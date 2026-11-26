@@ -829,6 +829,42 @@ async fn unsupported_game_attachment_rejects_once_and_keeps_commands_responsive(
 }
 
 #[tokio::test]
+async fn a_table_with_a_card_their_client_lacks_is_refused_once_without_closing() {
+    let server = Server::new(catalog()).await;
+    let a = server.arena.identify(&server.account("Alice")).unwrap();
+    let b = server.arena.identify(&server.account("Bobby")).unwrap();
+    let mut spec = server.spec();
+    spec.kingdom[0] = "Adventurer".into();
+    let table = server
+        .arena
+        .new_table(&a, &NewTable { spec, seats: None })
+        .unwrap();
+    server.arena.join_table(&b, &table.id, None).unwrap();
+    server.arena.ready(&a, &table.id, true).unwrap();
+    server
+        .arena
+        .ready(&b, &table.id, true)
+        .unwrap()
+        .game
+        .unwrap();
+    let mut client = server.socket("/").await;
+    client.login("Alice").await;
+    let refused = |m: &ServerMessage| matches!(m, ServerMessage::Failed(f) if f.reason == "COULD_NOT_CREATE_KINGDOM");
+    let messages = client.until(refused).await;
+    assert!(!messages.iter().any(|m| matches!(
+        m,
+        ServerMessage::TableJoined { .. } | ServerMessage::Snapshot(_)
+    )));
+    // Refreshed again, it isn't refused again, and the socket stays open.
+    for _ in 0..2 {
+        client.send(Command::RequestUpdate { kind: 0 }).await;
+        client.send(Command::Ping {}).await;
+        let messages = client.until(|m| matches!(m, ServerMessage::Pong)).await;
+        assert!(!messages.iter().any(refused));
+    }
+}
+
+#[tokio::test]
 async fn retained_result_policy_is_independent_of_next_table_rules_and_leave_clears_membership() {
     let server = Server::new(catalog()).await;
     let a = server.arena.identify(&server.account("Alice")).unwrap();
