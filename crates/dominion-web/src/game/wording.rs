@@ -149,7 +149,7 @@ pub fn question_prompt(d: &AgentDecision, cards: &CardDb, asking: &Asking) -> Op
     let own = own_prompt(d).contains("your");
     let whose = if own { "YOU" } else { "OTHER" };
     // Torturer's choice is asked as its discard, with taking the Curse its other button.
-    let key = if source == "Torturer" && d.purpose == "mode" {
+    let key = if source == "Torturer" && matches!(d.purpose.as_str(), "mode" | "either") {
         "TORTURER_MAY_DISCARD".to_string()
     } else {
         key
