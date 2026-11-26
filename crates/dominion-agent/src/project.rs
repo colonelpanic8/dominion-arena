@@ -106,7 +106,20 @@ fn zone_view(k: &KnownCards, zone: Zone) -> ZoneView {
         count: z.count as u32,
         known: count(&z.known),
         unknown: z.unknown as u32,
+        order: vec![],
     }
+}
+
+/// The names of a zone's `size` cards in the order they lie, `seen` being those the
+/// viewer sees: none unless it sees them all.
+fn seen_in_order(v: &View<'_>, seen: &[CardId], size: usize) -> Vec<String> {
+    if seen.len() != size {
+        return vec![];
+    }
+    seen.iter()
+        .map(|&c| v.card(c).map(|c| c.name().to_string()))
+        .collect::<Option<_>>()
+        .unwrap_or_default()
 }
 
 /// Seat names and ids a table supplies.
@@ -476,7 +489,10 @@ fn player_view(v: &View<'_>, known: &KnownCards, p: PlayerId, cx: &Context<'_>) 
         [Mat::Tavern, Mat::Island, Mat::NativeVillage, Mat::Exile].map(|m| Zone::Mat(p, m)),
     );
     for zone in zones {
-        let z = zone_view(known, zone);
+        let mut z = zone_view(known, zone);
+        if zone == Zone::Looking(p) {
+            z.order = seen_in_order(v, &pv.looking(), pv.looking_size());
+        }
         if z.count > 0 {
             other_zones.insert(zone_name(zone), z);
         }

@@ -1273,6 +1273,7 @@ fn deck_composition_preserves_deductions_and_uncertainty() {
         count: 1,
         known: count(&[("Estate", 1)]),
         unknown: 0,
+        order: vec![],
     };
     let seen = |view: &AgentView| {
         let b = board(
@@ -1331,6 +1332,7 @@ fn deck_composition_keeps_private_set_aside_cards_unknown() {
             count: 2,
             known: BTreeMap::new(),
             unknown: 2,
+            order: vec![],
         },
     );
     let b = board(

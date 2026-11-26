@@ -11,6 +11,7 @@ use crate::app::use_cards;
 use crate::assets::use_assets;
 use crate::card::CardSize;
 use crate::game::board::Board;
+use crate::game::interaction::Target;
 use crate::game::state::Selection;
 use crate::game::wording;
 use dioxus::prelude::*;
@@ -716,6 +717,30 @@ fn option_text(ui: &Ui, index: u32) -> String {
         .unwrap_or_default()
 }
 
+/// Puts a window's cards in `order` when they are all one card each of the cards looked
+/// at, which lie in that order.
+fn in_look_order(slots: &mut Vec<(usize, Option<usize>)>, targets: &[Target], order: &[String]) {
+    let looked_at = |&(i, copy): &(usize, Option<usize>)| {
+        let t = &targets[i];
+        t.zone.as_deref() == Some("looking") && (copy.is_some() || t.options.len() == 1)
+    };
+    if slots.len() != order.len() || !slots.iter().all(looked_at) {
+        return;
+    }
+    let mut left = slots.clone();
+    let mut out = Vec::with_capacity(slots.len());
+    for name in order {
+        let Some(k) = left
+            .iter()
+            .position(|&(i, _)| targets[i].card.as_deref() == Some(name.as_str()))
+        else {
+            return;
+        };
+        out.push(left.remove(k));
+    }
+    *slots = out;
+}
+
 fn zone_text(zone: &str) -> &str {
     match zone {
         "deck" => "from deck",
@@ -739,6 +764,9 @@ pub fn DecisionWindow(
     /// Cards looked at while answering a question about something else.
     #[props(default)]
     looking: Rc<Vec<String>>,
+    /// The seat's cards looked at or revealed, in the order they were taken.
+    #[props(default)]
+    look_order: Rc<Vec<String>>,
 ) -> Element {
     let ctx = use_table();
     let cards = use_cards();
@@ -874,6 +902,9 @@ pub fn DecisionWindow(
     let ordering = u.inter.ordered;
     if ordering {
         slots.reverse();
+    } else {
+        // Cards looked at lie as they were taken, as dominion.games shows their zone.
+        in_look_order(&mut slots, &u.inter.targets, &look_order);
     }
     let wide: Vec<bool> = slots
         .iter()

@@ -1745,10 +1745,16 @@ fn cards_being_looked_at_are_the_lookers_and_counted_for_the_others() {
     let looker = t.view(PlayerId(0));
     let zone = &looker.you.as_ref().unwrap().other_zones["looking"];
     assert_eq!((zone.count, zone.unknown), (5, 0));
+    let g = t.game();
+    let taken: Vec<&str> = (g.player(PlayerId(0)).looking.iter())
+        .map(|&c| g.card(c).name())
+        .collect();
+    assert_eq!(zone.order, taken);
     assert!(text::render(&looker).contains("\n  looking 5 ("));
     let other = t.view(PlayerId(1));
     let zone = &other.opponents[0].other_zones["looking"];
     assert_eq!((zone.count, zone.unknown), (5, 3));
+    assert!(zone.order.is_empty());
     assert_eq!(zone.known, CardCount::from([("Copper".into(), 2)]));
     assert!(text::render(&other).contains("\n  looking 5 (2 Copper; 3 unknown)"));
     let d = looker.decision.unwrap();

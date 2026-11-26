@@ -275,6 +275,8 @@ pub struct NamedZone {
     pub key: String,
     pub label: String,
     pub zone: Zone,
+    /// Its cards in the order they lie, when the seat sees them all there.
+    pub order: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -366,6 +368,7 @@ impl PlayerEntry {
                 key: key.into(),
                 label: label.into(),
                 zone: zone.clone(),
+                order: vec![],
             })
             .collect()
     }
@@ -408,6 +411,7 @@ impl PlayerEntry {
                     .collect(),
                 unknown: self.owned.unknown,
             },
+            order: vec![],
         })
     }
 }
@@ -868,6 +872,7 @@ fn player_entry(
                 key: k.clone(),
                 label: zone_label(k),
                 zone: zone(z, cards),
+                order: z.order.clone(),
             })
             .collect(),
         badges: player_badges(p),

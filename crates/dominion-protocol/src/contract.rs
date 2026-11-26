@@ -1,5 +1,5 @@
 //! What every producer of a view holds to beyond its JSON Schema: the names zones and
-//! landscape kinds go by, counts that add up, decisions whose groups can be told
+//! landscape kinds go by, counts that add up (a zone's `order` too), decisions whose groups can be told
 //! apart, and table extras that say no more than the view. The table and the agents read a view by these, whoever made it: the
 //! engine's projection and the dominion.games reducer both test theirs against
 //! [`violations`].
@@ -35,6 +35,15 @@ fn is_zone(name: &str) -> bool {
 fn kebab(s: &str) -> bool {
     let ok = |c: char| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-';
     !s.is_empty() && s.chars().all(ok) && !s.starts_with('-') && !s.ends_with('-')
+}
+
+/// Whether a zone's `order` names every card in it, each as known.
+fn in_order(z: &crate::ZoneView) -> bool {
+    let mut named = crate::CardCount::new();
+    for card in &z.order {
+        *named.entry(card.clone()).or_default() += 1;
+    }
+    z.unknown == 0 && named == z.known
 }
 
 /// What a decision gets wrong, in words. An agent tells a decision's groups apart only
@@ -112,6 +121,12 @@ pub fn violations(view: &AgentView, table: Option<&TableExtras>) -> Vec<String> 
             }
             if z.count == 0 {
                 out.push(format!("{}'s zone {key:?} is listed empty", p.name));
+            }
+            if !z.order.is_empty() && !in_order(z) {
+                out.push(format!(
+                    "{}'s zone {key:?} gives an order of other cards than it holds",
+                    p.name
+                ));
             }
         }
         for u in &p.uncertain {

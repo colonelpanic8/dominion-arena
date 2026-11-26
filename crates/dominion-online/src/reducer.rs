@@ -1354,7 +1354,16 @@ impl Reducer {
             count: k.count,
             known: self.named_counts(&k.known)?,
             unknown: k.count - k.known.values().sum::<u32>(),
+            order: vec![],
         })
+    }
+    /// The names of `zone`'s cards in the order they lie, if the seat sees them all.
+    fn seen_in_order(&self, zone: &model::Zone) -> Vec<String> {
+        zone.cards
+            .iter()
+            .map(|&id| self.card_name(id))
+            .collect::<Option<_>>()
+            .unwrap_or_default()
     }
     pub fn player_name(&self, index: i32) -> String {
         self.state
@@ -1408,9 +1417,14 @@ impl Reducer {
                     *a.known.entry(n).or_default() += c;
                 }
             } else if v.count > 0 {
-                let a: &mut view::ZoneView = other_zones
-                    .entry(zone_key(zone.kind).to_string())
-                    .or_default();
+                let key = zone_key(zone.kind);
+                let a: &mut view::ZoneView = other_zones.entry(key.to_string()).or_default();
+                // An order only for one zone's cards: zones merged have none between them.
+                a.order = if a.count == 0 && key == "looking" {
+                    self.seen_in_order(zone)
+                } else {
+                    vec![]
+                };
                 a.count += v.count;
                 a.unknown += v.unknown;
                 for (n, c) in v.known {

@@ -820,6 +820,14 @@ pub fn TableGame(controls: Element) -> Element {
         .as_ref()
         .is_some_and(|u| !u.inter.treasures.is_empty());
     let looking = Rc::new(looked_at(&b, ui_now.as_deref()));
+    let look_order = Rc::new(
+        b.you
+            .iter()
+            .flat_map(|y| &y.zones)
+            .find(|z| z.key == "looking")
+            .map(|z| z.order.clone())
+            .unwrap_or_default(),
+    );
     rsx! {
         document::Style { "{CSS}" }
         style { "{extra_css}" }
@@ -870,7 +878,7 @@ pub fn TableGame(controls: Element) -> Element {
                 can_treasures,
                 looking: !looking.is_empty(),
             }
-            prompt::DecisionWindow { g: g.clone(), ui: ui_now.clone(), sel: sel.clone(), looking }
+            prompt::DecisionWindow { g: g.clone(), ui: ui_now.clone(), sel: sel.clone(), looking, look_order }
             if !starting {
                 super::WaitingNotice {
                     style: format!(
@@ -1023,10 +1031,15 @@ fn looked_at(b: &Board, ui: Option<&Ui>) -> Vec<String> {
     {
         return vec![];
     }
-    you.zones
+    let Some(z) = you.zones.iter().find(|z| z.key == "looking") else {
+        return vec![];
+    };
+    if !z.order.is_empty() {
+        return z.order.clone();
+    }
+    z.zone
+        .known
         .iter()
-        .filter(|z| z.key == "looking")
-        .flat_map(|z| &z.zone.known)
         .flat_map(|s| std::iter::repeat_n(s.card.clone(), s.count as usize))
         .collect()
 }

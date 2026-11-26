@@ -116,6 +116,10 @@ pub struct ZoneView {
     pub count: u32,
     pub known: CardCount,
     pub unknown: u32,
+    /// Its cards in the order they lie, when the seat sees each of them there: cards
+    /// looked at or revealed in the order they were taken.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub order: Vec<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]

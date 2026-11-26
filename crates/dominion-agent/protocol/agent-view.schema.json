@@ -42,7 +42,13 @@
       "properties": {
         "count": { "$ref": "#/$defs/count" },
         "known": { "$ref": "#/$defs/cardCount" },
-        "unknown": { "$ref": "#/$defs/count" }
+        "unknown": { "$ref": "#/$defs/count" },
+        "order": {
+          "description": "The zone's cards in the order they lie, when the seat sees each of them there; absent otherwise. `looking` lists them in the order they were looked at or revealed.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/cardName" },
+          "minItems": 1
+        }
       },
       "required": ["count", "known", "unknown"],
       "additionalProperties": false
