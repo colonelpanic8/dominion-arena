@@ -666,8 +666,15 @@ pub fn TableGame(controls: Element) -> Element {
             .collect();
         let confirm_single = settings.read().web_confirm_single;
         Some(Rc::new(Ui {
+            // A question dominion.games offers "Select All" for is confirmed with Done.
             click_answers: (answers_on_click(d)
-                || (d.min == Some(0) && d.max == Some(1) && d.groups.len() <= 1))
+                || (d.min == Some(0)
+                    && d.max == Some(1)
+                    && d.groups.len() <= 1
+                    && !d
+                        .source
+                        .as_deref()
+                        .is_some_and(|c| prompt::SELECT_ALL.contains(&c))))
                 && !(confirm_single
                     && matches!(
                         d.purpose.as_str(),

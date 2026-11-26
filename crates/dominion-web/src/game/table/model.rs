@@ -14,6 +14,8 @@ pub enum Spot {
     InPlay(String),
     Pile(PileAt),
     Landscape(String),
+    /// The top of the seat's own discard pile.
+    Discard,
     Tray,
     Button,
     Ability,
@@ -33,6 +35,19 @@ pub fn spots(board: &Board, inter: &Interaction) -> Vec<Spot> {
         .chain(&board.non_supply)
         .map(|p| p.at)
         .collect();
+    // dominion.games picks a lone card from the discard pile where it lies, on top.
+    let lone_top = {
+        let mut tray = inter.targets.iter().filter(|t| t.place == Place::Tray);
+        match (tray.next(), tray.next()) {
+            (Some(t), None) => {
+                t.zone.as_deref() == Some("discard")
+                    && t.options.len() == 1
+                    && t.card.is_some()
+                    && you.and_then(|y| y.discard_top.as_ref()) == t.card.as_ref()
+            }
+            _ => false,
+        }
+    };
     let mut taken: Vec<Spot> = vec![];
     inter
         .targets
@@ -49,6 +64,7 @@ pub fn spots(board: &Board, inter: &Interaction) -> Vec<Spot> {
                 {
                     Some(Spot::Landscape(card))
                 }
+                Place::Tray if lone_top => Some(Spot::Discard),
                 Place::Button => return Spot::Button,
                 Place::Ability => return Spot::Ability,
                 _ => None,

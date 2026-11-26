@@ -142,6 +142,11 @@ fn check_spots(b: &Board, inter: &Interaction) {
             Spot::Landscape(c) => assert!(t.place == Place::Landscape && *c == card),
             Spot::Button => assert_eq!(t.place, Place::Button),
             Spot::Ability => assert_eq!(t.place, Place::Ability),
+            Spot::Discard => assert!(
+                t.place == Place::Tray
+                    && t.zone.as_deref() == Some("discard")
+                    && b.you.as_ref().and_then(|y| y.discard_top.as_ref()) == t.card.as_ref()
+            ),
             Spot::Tray => assert!(!matches!(t.place, Place::Button | Place::Ability)),
         }
     }

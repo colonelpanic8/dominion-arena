@@ -18,7 +18,7 @@ use dioxus::prelude::*;
 use std::rc::Rc;
 
 /// The cards whose choices dominion.games offers "Select All" for.
-const SELECT_ALL: [&str; 11] = [
+pub(super) const SELECT_ALL: [&str; 11] = [
     "Cellar",
     "Vault",
     "Inn",
@@ -429,7 +429,6 @@ pub fn Buttons(
             what: Act::Treasures,
         });
     }
-    let card_targets = u.inter.targets.iter().filter(|t| t.card.is_some()).count();
     if !u.click_answers {
         let max = d.max.unwrap_or(1) as usize;
         let all_options: usize = u
@@ -440,24 +439,20 @@ pub fn Buttons(
             .map(|t| t.options.len())
             .sum();
         let select_all_card = d.source.as_deref().is_some_and(|c| SELECT_ALL.contains(&c));
-        if select_all_card
-            && d.min == Some(0)
-            && max > 1
-            && max >= all_options
-            && card_targets > 1
-            && !d.ordered
-            && picks < all_options
-        {
+        // Kept once everything is picked, greyed out, as dominion.games keeps it.
+        if select_all_card && d.min == Some(0) && max >= all_options && !d.ordered {
             row.push(Btn {
                 label: "Select All".into(),
                 icon: None,
                 count: None,
-                disabled: busy,
+                disabled: busy || picks >= all_options,
                 on: false,
                 what: Act::SelectAll,
             });
         }
-        let none = wording::done_with_none(d).filter(|_| picks == 0);
+        let none = wording::done_with_none(d)
+            .or_else(|| (select_all_card && d.min == Some(0)).then(|| wording::decline(d)))
+            .filter(|_| picks == 0);
         // Cards to order, confirmed in the order they lie.
         let as_they_lie = picks == 0 && crate::game::state::default_order(d).is_some();
         let icon = match d.purpose.as_str() {

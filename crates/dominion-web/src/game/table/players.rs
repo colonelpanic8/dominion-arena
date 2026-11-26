@@ -812,6 +812,7 @@ pub fn YourArea(board: Rc<Board>, g: Rc<Geometry>, ui: Option<Rc<Ui>>, sel: Sele
                 at: g.your_discard,
                 anchor: format!("discard:{}", you.seat),
                 opens: deck.clone(),
+                mark: mark_at(&ui, &sel, Spot::Discard),
                 class: "dt-own-pile",
             }
         } else {
