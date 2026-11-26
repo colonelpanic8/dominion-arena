@@ -669,6 +669,7 @@ pub fn Buttons(
                 let card = t.card.clone().unwrap_or_default();
                 let r = Rect::new(g.side_right - side_w, g.side_top + k as f64 * (side_h + g.vh), side_w, side_h);
                 let n = t.options.len();
+                let detail = wording::ability_detail(&card, &t.label).map(str::to_string);
                 let art = assets
                     .card(&card)
                     .and_then(|f| f.art.as_deref())
@@ -690,6 +691,9 @@ pub fn Buttons(
                             }
                         }
                         span { class: "dt-ability-name", "{card}" }
+                        if let Some(detail) = detail {
+                            span { class: "dt-ability-detail", "{detail}" }
+                        }
                         if n > 1 {
                             span { class: "dt-btn-count", "{n}" }
                         }
