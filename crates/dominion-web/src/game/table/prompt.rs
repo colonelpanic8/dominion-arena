@@ -4,7 +4,7 @@
 //! revealed or looked-at cards, cards in decks and discard piles, named cards.
 
 use super::layout::{Geometry, Rect};
-use super::pieces::{CardName, Reminder, TableCard, seat_class};
+use super::pieces::{CardName, Reminder, TableCard};
 use super::supply::Badges;
 use super::{Spot, Ui, use_table};
 use crate::app::use_cards;
@@ -153,15 +153,9 @@ pub fn StatusBar(
             }
         }
     } else {
-        // A player who has left is counted down in place of "Waiting for".
-        let left = forfeit.as_ref().is_some_and(|(f, _)| f.left);
+        // dominion.games says nothing while another player decides.
         let waiting = match &s.deciding {
-            Some(_) if left => rsx! {},
-            Some(w) => rsx! {
-                "Waiting for "
-                span { class: "dt-pc {seat_class(w.seat)}", "{w.name}" }
-                "."
-            },
+            Some(_) => rsx! {},
             None => rsx! { "Waiting…" },
         };
         rsx! {
