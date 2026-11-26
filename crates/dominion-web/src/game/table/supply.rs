@@ -29,12 +29,11 @@ pub fn basic_columns(b: &Board) -> (Vec<PileEntry>, Vec<PileEntry>) {
     (rest, treasures)
 }
 
-/// What sits beside the kingdom, in order: landscapes by cost and name, then Boons and
-/// Hexes, then cards set aside during setup.
+/// What sits beside the kingdom, in order: landscapes by cost and name, then cards set
+/// aside during setup that have no pile or landscape of their source's to sit on.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Wide {
     Landscape(LandscapeEntry),
-    Deck(&'static str, CardDeck),
     SetAside(SetupSetAside),
 }
 
@@ -46,14 +45,51 @@ pub fn wides(b: &Board) -> Vec<Wide> {
             .then_with(|| a.card.cmp(&b.card))
     });
     let mut out: Vec<Wide> = ls.into_iter().map(Wide::Landscape).collect();
-    if let Some(d) = b.boons.clone() {
-        out.push(Wide::Deck("Boons", d));
-    }
-    if let Some(d) = b.hexes.clone() {
-        out.push(Wide::Deck("Hexes", d));
-    }
-    out.extend(b.set_asides.iter().cloned().map(Wide::SetAside));
+    out.extend(
+        b.set_asides
+            .iter()
+            .filter(|s| host(b, &s.source).is_none())
+            .cloned()
+            .map(Wide::SetAside),
+    );
     out
+}
+
+/// A non-Supply strip: the Hexes' and Boons' decks first, as dominion.games sorts its
+/// "Hex Drawpile" and "Boon Drawpile" (landscapes, after the cards, then reversed), then
+/// the piles, most expensive first.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Strip {
+    Deck(&'static str, CardDeck),
+    Pile(PileEntry),
+}
+
+pub fn strips(b: &Board) -> Vec<Strip> {
+    let mut piles = b.non_supply.clone();
+    piles.sort_by(|a, b| b.printed.cmp(&a.printed).then_with(|| b.name.cmp(&a.name)));
+    let decks = [("Hexes", &b.hexes), ("Boons", &b.boons)];
+    decks
+        .into_iter()
+        .filter_map(|(label, d)| Some(Strip::Deck(label, d.clone()?)))
+        .chain(piles.into_iter().map(Strip::Pile))
+        .collect()
+}
+
+/// What a card set aside for `source` is drawn on: its pile or its landscape.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Host {
+    Pile,
+    Landscape,
+}
+
+fn host(b: &Board, source: &str) -> Option<Host> {
+    if b.supply.kingdom.iter().flatten().any(|p| p.name == source) {
+        Some(Host::Pile)
+    } else if b.landscapes.iter().any(|l| l.card == source) {
+        Some(Host::Landscape)
+    } else {
+        None
+    }
 }
 
 /// The kingdom piles, cheapest first by the cost printed on each pile's own card.
@@ -73,12 +109,35 @@ pub fn SupplyArea(
     let (victory, treasures) = basic_columns(&board);
     let kingdom = kingdom(&board);
     let wide = wides(&board);
-    let mut non_supply = board.non_supply.clone();
-    non_supply.sort_by(|a, b| b.printed.cmp(&a.printed).then_with(|| b.name.cmp(&a.name)));
+    let strips = strips(&board);
     let basic: Vec<(PileEntry, Rect)> = victory
         .into_iter()
         .zip(g.victory.iter().copied())
         .chain(treasures.into_iter().zip(g.treasures.iter().copied()))
+        .collect();
+    let cards = use_cards();
+    let insets: Vec<(SetupSetAside, Rect)> = board
+        .set_asides
+        .iter()
+        .filter_map(|s| {
+            let on = match host(&board, &s.source)? {
+                Host::Pile => kingdom
+                    .iter()
+                    .zip(g.kingdom.iter())
+                    .find(|(p, _)| p.name == s.source)
+                    .map(|(_, r)| (*r, false))?,
+                Host::Landscape => wide
+                    .iter()
+                    .zip(g.landscapes.iter())
+                    .find(|(w, _)| matches!(w, Wide::Landscape(l) if l.card == s.source))
+                    .map(|(_, r)| (*r, true))?,
+            };
+            let mut same = board.set_asides.iter().filter(|o| o.source == s.source);
+            let n = same.clone().count();
+            let i = same.position(|o| o == s).unwrap_or(0);
+            let wide_card = cards.get(&s.card).is_some_and(crate::card::is_landscape);
+            Some((s.clone(), super::layout::inset(on.0, on.1, wide_card, i, n)))
+        })
         .collect();
     rsx! {
         div { class: "dt-supply",
@@ -91,12 +150,17 @@ pub fn SupplyArea(
             for (w, r) in wide.iter().zip(g.landscapes.iter()) {
                 match w.clone() {
                     Wide::Landscape(l) => rsx! { Landscape { key: "l{l.card}", entry: l, at: *r, ui: ui.clone(), sel: sel.clone() } },
-                    Wide::Deck(label, d) => rsx! { Deck { key: "{label}", label, deck: d, at: *r } },
                     Wide::SetAside(entry) => rsx! { SetAsideCard { key: "s{entry.source}:{entry.card}", entry, at: *r, ui: ui.clone(), sel: sel.clone() } },
                 }
             }
-            for (p, r) in non_supply.iter().zip(g.non_supply.iter()) {
-                Pile { key: "n{p.name}", pile: p.clone(), at: *r, ui: ui.clone(), sel: sel.clone(), size: CardSize::Micro }
+            for (s, r) in strips.iter().zip(g.non_supply.iter()) {
+                match s.clone() {
+                    Strip::Deck(label, d) => rsx! { Deck { key: "{label}", label, deck: d, at: *r } },
+                    Strip::Pile(p) => rsx! { Pile { key: "n{p.name}", pile: p, at: *r, ui: ui.clone(), sel: sel.clone(), size: CardSize::Micro } },
+                }
+            }
+            for (entry, r) in insets.iter() {
+                SetAsideCard { key: "i{entry.source}:{entry.card}", entry: entry.clone(), at: *r, ui: ui.clone(), sel: sel.clone(), inset: true }
             }
             TrashTab { board: board.clone(), g: g.clone() }
         }
@@ -230,10 +294,7 @@ fn Pile(
     } else {
         at
     };
-    let waiting = ui
-        .as_ref()
-        .is_some_and(|u| crate::game::wording::treasures_first(&u.decision));
-    let plus = mark.target.is_some() && size != CardSize::Full && !waiting;
+    let plus = mark.target.is_some() && size != CardSize::Full;
     rsx! {
         TableCard {
             name: pile.card.clone(),
@@ -243,7 +304,8 @@ fn Pile(
             anchor: pile_anchor(pile.at),
             mark,
             empty: pile.empty,
-            back: pile.hidden,
+            // A shuffled pile (Loot) on its strip shows its name, as dominion.games does.
+            back: pile.hidden && size != CardSize::Micro,
             badges: pile.badges.clone(),
             at,
             plus,
@@ -288,7 +350,15 @@ fn Landscape(entry: LandscapeEntry, at: Rect, ui: Option<Rc<Ui>>, sel: Selection
 
 /// A public card set aside during setup, marked with the card that set it aside.
 #[component]
-fn SetAsideCard(entry: SetupSetAside, at: Rect, ui: Option<Rc<Ui>>, sel: Selection) -> Element {
+fn SetAsideCard(
+    entry: SetupSetAside,
+    at: Rect,
+    ui: Option<Rc<Ui>>,
+    sel: Selection,
+    /// Drawn on its source's pile or landscape, which names it already.
+    #[props(default)]
+    inset: bool,
+) -> Element {
     let SetupSetAside { source, card } = entry;
     let cards = use_cards();
     let aspect = f64::from(aspect_ratio(cards.get(&card), CardSize::Mini));
@@ -310,18 +380,29 @@ fn SetAsideCard(entry: SetupSetAside, at: Rect, ui: Option<Rc<Ui>>, sel: Selecti
             size: CardSize::Mini,
             mark,
             plus,
-            badges: vec![badge],
-            class: "dt-setup-set-aside",
+            badges: if inset { vec![] } else { vec![badge] },
+            class: if inset { "dt-setup-set-aside dt-inset" } else { "dt-setup-set-aside" },
             at,
+            z: i32::from(inset),
         }
     }
 }
 
-/// The Boons or Hexes deck, face down with how many are left, beside its discard pile.
+/// The Boons or Hexes deck, as dominion.games' "Boon Drawpile" or "Hex Drawpile": a
+/// non-Supply strip counting the cards left to draw, opening its discard pile.
 #[component]
-fn Deck(label: String, deck: CardDeck, at: Rect) -> Element {
-    let ctx = use_table();
-    let top = deck.discard.last().cloned();
+fn Deck(label: &'static str, deck: CardDeck, at: Rect) -> Element {
+    let cards = use_cards();
+    let (kind, title) = match label {
+        "Hexes" => ("Hex", "Hex Drawpile"),
+        _ => ("Boon", "Boon Drawpile"),
+    };
+    // Any card of the deck's type draws its strip's frame.
+    let face = cards
+        .all()
+        .iter()
+        .find(|c| c.types.len() == 1 && c.types[0] == kind)
+        .map_or_else(|| title.to_string(), |c| c.name.clone());
     let mut stacks: Vec<crate::game::board::Stack> = vec![];
     for c in &deck.discard {
         match stacks.iter_mut().find(|s| &s.card == c) {
@@ -340,32 +421,15 @@ fn Deck(label: String, deck: CardDeck, at: Rect) -> Element {
         composition: None,
         played: false,
     };
-    let open = popup.clone();
-    let lower = label.to_lowercase();
-    let half = Rect::new(at.x, at.y, at.w / 2.0 - 2.0, at.h);
-    let right = Rect::new(at.x + at.w / 2.0 + 2.0, at.y, at.w / 2.0 - 2.0, at.h);
     rsx! {
-        div {
-            class: "dt-deckback dt-deck-{lower} dt-click",
-            style: "{half.style()}",
-            "data-deck": "{label}",
-            title: "{label}: {deck.count} left to draw",
-            onclick: move |e| { e.stop_propagation(); ctx.open(open.clone()); },
-            span { class: "dt-deckback-label", "{label}" }
-            span { class: "dt-deckback-n", "{deck.count}" }
-        }
-        match top {
-            Some(card) => rsx! {
-                TableCard {
-                    name: card,
-                    size: CardSize::Mini,
-                    count: Some(deck.discard.len() as u32),
-                    opens: popup,
-                    class: "dt-landscape dt-deck-discard",
-                    at: right,
-                }
-            },
-            None => rsx! {},
+        TableCard {
+            name: face,
+            title: title.to_string(),
+            size: CardSize::Micro,
+            count: Some(deck.count),
+            opens: popup,
+            class: "dt-pile dt-nspile dt-deck-{kind.to_lowercase()}",
+            at,
         }
     }
 }

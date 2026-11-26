@@ -55,6 +55,8 @@ pub struct Mark {
     pub ordered: bool,
     /// What a click does, for the border's colour: see [`tone`].
     pub tone: &'static str,
+    /// One copy of the target's cards drawn alone: a click on it picked takes it back.
+    pub copy: bool,
 }
 
 impl Ui {
@@ -75,6 +77,27 @@ impl Ui {
             } else {
                 tone(&self.decision, target)
             },
+            copy: false,
+        }
+    }
+
+    /// Copy `k` of target `t`'s cards, drawn alone: picked if that many are.
+    pub fn mark_copy(&self, sel: &Selection, t: usize, k: usize) -> Mark {
+        let m = self.mark_target(sel, t);
+        let picked = m.picked.get(k).map(|&p| vec![p]).unwrap_or_default();
+        let full = !self.click_answers
+            && sel.picks().len() >= self.inter.max as usize
+            && picked.is_empty();
+        Mark {
+            options: 1,
+            picked,
+            tone: if full {
+                ""
+            } else {
+                tone(&self.decision, &self.inter.targets[t])
+            },
+            copy: true,
+            ..m
         }
     }
 
@@ -570,28 +593,29 @@ fn active_opponent(b: &Board, chosen: Option<u8>) -> Option<u8> {
         .or_else(|| others.first().map(|o| o.seat))
 }
 
-/// The layout's inputs for a board. `deciding`: the shown seat has a decision open.
-/// Someone watching sees the kingdom drop on the turns of all but the first player.
+/// The layout's inputs for a board. `ended_turn`: whose turn the game ended on, once it
+/// has. Someone watching sees the kingdom drop on the turns of all but the first player.
 fn shape(
     b: &Board,
     settings: &dominion_protocol::api::WebSettings,
-    deciding: bool,
+    ended_turn: Option<u8>,
 ) -> layout::Shape {
     let (victory, treasures) = supply::basic_columns(b);
+    let turn = b.status.player.as_ref().map(|w| w.seat).or(ended_turn);
+    let others_turn = turn.is_some()
+        && turn != b.you.as_ref().map(|y| y.seat)
+        && turn != b.front().map(|f| f.seat);
     layout::Shape {
         opponents: b.others().len(),
         victory: victory.len(),
         treasures: treasures.len(),
         kingdom: b.supply.kingdom.iter().map(Vec::len).sum(),
         landscapes: supply::wides(b).len(),
-        non_supply: b.non_supply.len(),
+        non_supply: supply::strips(b).len(),
         lowered: settings.web_move_kingdom
-            && b.status.running
             && b.front().is_some()
-            && b.status.player.is_some()
+            && others_turn
             && !b.status.your_turn
-            && !b.front_turn()
-            && !deciding
             && !at_start(b),
     }
 }
@@ -700,10 +724,17 @@ pub fn TableGame(controls: Element) -> Element {
     let geometry = use_memo(move || {
         let (w, h) = viewport();
         let b = board_memo.read();
-        let deciding = ui.read().is_some();
+        let ended_turn = b.as_ref().filter(|b| !b.status.running).and_then(|_| {
+            let st = game.state.read();
+            st.log
+                .iter()
+                .rev()
+                .find(|e| e.kind == "turn-start")
+                .and_then(|e| e.player)
+        });
         let s = b
             .as_ref()
-            .map(|b| shape(b, &settings.read(), deciding))
+            .map(|b| shape(b, &settings.read(), ended_turn))
             .unwrap_or_default();
         Rc::new(layout::geometry(w, h, &s))
     });

@@ -734,7 +734,9 @@ pub(super) fn prepare(
                 };
                 children.push(choice(
                     description(c, "BUY", story, -1)?,
-                    QuestionElements::BuyableCards(buys.iter().map(|x| (x.0, false)).collect()),
+                    // Each pile the engine offers is affordable now: "simple" to their
+                    // client, which only lets a player click those (unless they autobuy).
+                    QuestionElements::BuyableCards(buys.iter().map(|x| (x.0, true)).collect()),
                     0,
                     usize::from(!buys.is_empty()),
                     c.symbol("DeclineButtonIds", button)?,

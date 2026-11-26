@@ -34,8 +34,22 @@ pub const ATTACHED: Rect = r(0.22, 0.03, 0.72, 0.14);
 pub const ATTACHED_NAME: Rect = r(0.03, 0.2, 0.94, 0.8);
 /// The card of the pile a mini landscape names (a Trait's, Obelisk's), drawn on it.
 pub const LANDSCAPE_PILE: Rect = r(0.6, 0.177, 0.3, 0.446);
+/// A turned card's name and type line across (upstream's boxes on an inverted card: the
+/// name clear of the cost); down, they swap places ([`Rect::flipped_from`]).
+pub const INVERTED_NAME: Rect = r(0.227, 0.0, 0.65, 0.0);
+pub const INVERTED_TYPES: Rect = r(0.0825, 0.0, 0.815, 0.0);
 
 impl Rect {
+    /// Mirrored top to bottom.
+    pub fn flipped(&self) -> Rect {
+        r(self.x, 1.0 - self.y - self.h, self.w, self.h)
+    }
+
+    /// Across as this, down as `upright` mirrored top to bottom.
+    pub fn flipped_from(&self, upright: Rect) -> Rect {
+        r(self.x, 1.0 - upright.y - upright.h, self.w, upright.h)
+    }
+
     pub fn css(&self) -> String {
         format!(
             "left:{:.3}%;top:{:.3}%;width:{:.3}%;height:{:.3}%;",

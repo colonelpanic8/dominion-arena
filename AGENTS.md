@@ -235,6 +235,8 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
                           clicks show composition by zone, using the viewer's knowledge,
                           and the zones it can't see into as one (`PlayerEntry::rest`)
   src/game/wording.rs     dominion.games' prompts and button names for a decision (pure)
+  src/game/question_prompts.tsv  dominion.games' short prompt for each of its question ids
+                          (client 2.3.7), which `wording` looks a card's question up in
   assets/table.css        table styles: the frame from --u, the middle row and hand from layout.rs
   src/game/entry.rs       log entries parsed back from their text in every form the agent
                           log writes them (pure); what logfmt and moves read

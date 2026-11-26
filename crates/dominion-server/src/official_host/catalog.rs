@@ -242,6 +242,7 @@ pub(super) const REQUIRED_SYMBOLS: &[(&str, &[&str])] = &[
             "PLUS_CARD",
             "MINUS_COST",
             "TRASH",
+            "JOURNEY",
             "MINUS_CARD",
             "MINUS_COIN",
         ],
@@ -275,6 +276,8 @@ pub(super) mod zone {
     pub const VICTORY: i32 = 6;
     pub const LANDSCAPE: i32 = 7;
     pub const PLAY: i32 = 8;
+    /// A hidden window nothing is drawn from: where a player's Journey token lies.
+    pub const TOKENS: i32 = 9;
     pub const TAVERN: i32 = 10;
     pub const NATIVE_VILLAGE: i32 = 11;
     pub const ISLAND: i32 = 12;
@@ -322,6 +325,7 @@ pub(super) const ZONE_SYMBOLS: &[(&str, i32)] = &[
     ("BasicVictoryZone", zone::VICTORY),
     ("SingleLandscapeZone", zone::LANDSCAPE),
     ("InPlayZone", zone::PLAY),
+    ("HiddenWindowZone", zone::TOKENS),
     ("TavernZone", zone::TAVERN),
     ("NVZone", zone::NATIVE_VILLAGE),
     ("IslandZone", zone::ISLAND),

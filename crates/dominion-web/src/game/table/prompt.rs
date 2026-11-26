@@ -4,7 +4,7 @@
 //! revealed or looked-at cards, cards in decks and discard piles, named cards.
 
 use super::layout::{Geometry, Rect};
-use super::pieces::{CardName, Reminder, TableCard, seat_class};
+use super::pieces::{CardName, LastingReminder, Reminder, TableCard, seat_class};
 use super::supply::Badges;
 use super::{Spot, Ui, use_table};
 use crate::app::use_cards;
@@ -29,6 +29,36 @@ const SELECT_ALL: [&str; 11] = [
     "Silos",
     "Hostelry",
     "Marchland",
+];
+
+/// The cards whose questions dominion.games' window shows stacked, like cards together;
+/// it draws every other question's cards one by one.
+const STACKED_WINDOWS: [&str; 25] = [
+    "Harbinger",
+    "Hermit",
+    "Scavenger",
+    "Annex",
+    "Bustling Village",
+    "Settlers",
+    "Herald",
+    "Inn",
+    "Counting House",
+    "The Moon's Gift",
+    "Crypt",
+    "Necromancer",
+    "Mountain Village",
+    "Star Chart",
+    "March",
+    "Order of Astrologers",
+    "Order of Masons",
+    "Herb Gatherer",
+    "Courier",
+    "Bury",
+    "Prepare",
+    "Orb",
+    "Fated",
+    "Avoid",
+    "Joust",
 ];
 
 /// Number decisions with more values than this get a slider instead of a button each.
@@ -68,8 +98,19 @@ pub fn StatusBar(
     let potions = s.potions.unwrap_or(0);
     let debt = s.debt.unwrap_or_else(|| token("debt"));
     let (coffers, villagers, favors) = (token("coffers"), token("villagers"), token("favors"));
-    // What else the turn player has, as dominion.games shows it after the counters.
-    let shown = ["coffers", "villagers", "favors", "debt"];
+    // What else the turn player has, as dominion.games shows it after the counters: not
+    // the Journey token, VP tokens or Pirate Ship tokens, which it shows only beside the
+    // player's name.
+    let shown = [
+        "coffers",
+        "villagers",
+        "favors",
+        "debt",
+        "journey",
+        "journey-down",
+        "vp",
+        "pirate-ship",
+    ];
     let badges: Vec<_> = turn_player
         .map(|p| {
             p.badges
@@ -83,15 +124,21 @@ pub fn StatusBar(
         .map(|p| p.states.iter().chain(&p.artifacts).cloned().collect())
         .unwrap_or_default();
     let boons: Vec<String> = turn_player.map(|p| p.boons.clone()).unwrap_or_default();
-    let held = !badges.is_empty() || !reminders.is_empty() || !boons.is_empty();
+    let lasting: Vec<(String, u32)> = turn_player.map(|p| p.lasting.clone()).unwrap_or_default();
+    let held =
+        !badges.is_empty() || !reminders.is_empty() || !boons.is_empty() || !lasting.is_empty();
     let ticker: Element = if starting {
         rsx! { span { "data-prompt": "starting", "Your starting cards:" } }
     } else if !s.running {
-        rsx! { "The game has ended." }
+        rsx! {}
     } else if let Some(u) = ui.clone() {
-        let text = wording::prompt(&u.decision, &cards);
+        let parts = wording::prompt_parts(&u.decision, &cards);
         rsx! {
-            span { "data-prompt": "{u.decision.purpose}", "{text}" }
+            span { "data-prompt": "{u.decision.purpose}",
+                for (i, part) in parts.iter().enumerate() {
+                    span { key: "{i}", if i > 0 { " " } "{part}" }
+                }
+            }
         }
     } else {
         // A player who has left is counted down in place of "Waiting for".
@@ -165,6 +212,9 @@ pub fn StatusBar(
                 if held {
                     span { class: "dt-status-held", "data-held": "1",
                         Badges { badges }
+                        for (c, n) in lasting.iter() {
+                            LastingReminder { key: "l{c}", name: c.clone(), count: *n }
+                        }
                         for c in reminders.iter() {
                             Reminder { key: "r{c}", name: c.clone() }
                         }
@@ -200,6 +250,54 @@ pub fn StatusBar(
             }
         }
     }
+}
+
+/// A button's label as dominion.games fits it on a `w` × `h` button: one line in 90% of
+/// the width beside any icon, at most 0.405 of the height tall; on a button with an icon,
+/// two lines of up to 0.3 of the height where one would be smaller than that.
+fn label_lines(
+    label: &str,
+    w: f64,
+    h: f64,
+    icon: bool,
+    m: &dyn crate::card::fit::Measure,
+) -> Vec<(String, f64)> {
+    let room = 0.9 * if icon { w - h } else { w };
+    let fit = |text: &str, cap: f64| {
+        let ems = f64::from(m.width(text, crate::card::fit::Font::Title)).max(0.01);
+        cap.min(room / ems)
+    };
+    let one = fit(label, 0.405 * h);
+    if !icon || one >= 0.3 * h {
+        return vec![(label.to_string(), one)];
+    }
+    let words: Vec<&str> = label.split(' ').collect();
+    let (a, b) = words.split_at(words.len() / 2);
+    [a.join(" "), b.join(" ")]
+        .into_iter()
+        .filter(|l| !l.is_empty())
+        .map(|l| {
+            let px = fit(&l, 0.3 * h);
+            (l, px)
+        })
+        .collect()
+}
+
+/// The icon dominion.games draws on a button choosing a vanilla bonus.
+fn mode_icon(label: &str) -> Option<&'static str> {
+    Some(match label {
+        "+1 Card" => "1-card",
+        "+2 Cards" => "2-card",
+        "+3 Cards" => "3-card",
+        "+1 Action" => "action",
+        "+2 Actions" => "2-action",
+        "+1 Buy" => "buy",
+        "+$1" => "1-coin",
+        "+$2" => "2-coin",
+        "+$3" => "3-coin",
+        "Gain a Gold" => "gold",
+        _ => return None,
+    })
 }
 
 /// The option a counter answers when clicked, as dominion.games has no button for it.
@@ -296,7 +394,11 @@ pub fn Buttons(
                 } else {
                     t.label.clone()
                 },
-                icon: resolving.then_some("continue"),
+                icon: if resolving {
+                    Some("continue")
+                } else {
+                    mode_icon(&t.label)
+                },
                 count: None,
                 disabled: busy,
                 on: !sel.positions(&t.options).is_empty(),
@@ -342,14 +444,16 @@ pub fn Buttons(
                 what: Act::SelectAll,
             });
         }
+        let none = wording::done_with_none(d).filter(|_| picks == 0);
         let icon = match d.purpose.as_str() {
+            _ if none.is_some() => Some("refuse"),
             "discard" => Some("discard-icon"),
             "trash" => Some("trash-icon"),
             "top-deck" => Some("topdeck-icon"),
             _ => None,
         };
         row.push(Btn {
-            label: wording::done(d).into(),
+            label: none.unwrap_or_else(|| wording::done(d)).into(),
             icon,
             count: wording::done_count(d, picks),
             disabled: busy || !sel.is_legal(d),
@@ -371,7 +475,13 @@ pub fn Buttons(
         });
     }
     let (bw, bh) = g.button;
-    let width = |b: &Btn| if b.icon.is_some() { bw * 4.0 / 3.0 } else { bw };
+    let width = |b: &Btn| {
+        if b.icon.is_some() || b.count.is_some() {
+            bw * 4.0 / 3.0
+        } else {
+            bw
+        }
+    };
     let gap = 2.0 * g.vh;
     // Rows centred on the button line, wrapping upwards past 56vw.
     let mut rows: Vec<Vec<usize>> = vec![vec![]];
@@ -390,8 +500,9 @@ pub fn Buttons(
         rows.last_mut().expect("a row").push(i);
     }
     let mut placed: Vec<(usize, Rect)> = vec![];
-    // With abilities to choose from, every button joins their column at the right.
-    if !side.is_empty() {
+    // With abilities to choose from, or five buttons or more, every button joins the
+    // column at the right.
+    if !side.is_empty() || row.len() >= 5 {
         rows.clear();
         for (i, b) in row.iter().enumerate() {
             let w = width(b);
@@ -418,6 +529,7 @@ pub fn Buttons(
         Rect::new(g.buttons_cx - w / 2.0, g.buttons_bottom - bh, w, bh)
     });
     let side_w = 21.0 * g.vh;
+    let m = crate::card::measure::measurer(assets.fonts);
     rsx! {
         for (i, r) in placed.iter() {
             {
@@ -425,6 +537,10 @@ pub fn Buttons(
                 let what = b.what.clone();
                 let icon_url = b.icon.and_then(|k| {
                     let path = match k {
+                        "1-card" | "2-card" | "3-card" | "1-coin" | "2-coin" | "3-coin"
+                        | "action" | "2-action" | "buy" | "gold" => {
+                            return assets.file_url(&format!("images/buttons/{k}.png"));
+                        }
                         "treasures" => "images/buttons/autoplay-treasures.png",
                         "refuse" => "images/buttons/refuse.png",
                         "continue" => "images/buttons/continue.png",
@@ -467,7 +583,11 @@ pub fn Buttons(
                                 Act::Decline => ctx.decline(),
                             }
                         },
-                        span { class: "dt-btn-label", "{b.label}" }
+                        span { class: "dt-btn-label",
+                            for (k, (line, px)) in label_lines(&b.label, r.w, r.h, b.icon.is_some() || b.count.is_some(), m.as_ref()).into_iter().enumerate() {
+                                span { key: "{k}", class: "dt-btn-line", style: "font-size:{px:.1}px;", "{line}" }
+                            }
+                        }
                         if let Some(src) = icon_url {
                             span { class: "dt-btn-img",
                                 img { src, alt: "", draggable: "false" }
@@ -600,6 +720,55 @@ pub fn DecisionWindow(g: Rc<Geometry>, ui: Option<Rc<Ui>>, sel: Selection) -> El
     if tray.is_empty() && !u.inter.name_any && !show_order {
         return rsx! {};
     }
+    // Naming a card with every choice on the table: dominion.games' input box alone.
+    if tray.is_empty() && !show_order {
+        let q = query().trim().to_lowercase();
+        let results: Vec<String> = if q.len() >= 2 {
+            cards
+                .nameable()
+                .into_iter()
+                .filter(|n| n.to_lowercase().contains(&q))
+                .take(8)
+                .collect()
+        } else {
+            vec![]
+        };
+        return rsx! {
+            div { class: "dt-name-input", "data-target-group": "name",
+                onclick: move |e| e.stop_propagation(),
+                input {
+                    class: "dt-name-entry",
+                    placeholder: "name a card",
+                    value: "{query}",
+                    oninput: move |e| query.set(e.value()),
+                    onkeydown: move |e| {
+                        if e.key() == Key::Enter {
+                            let q = query();
+                            ctx.name(q.trim());
+                        }
+                    },
+                }
+                if !results.is_empty() {
+                    div { class: "dt-name-gallery",
+                        for n in results.iter() {
+                            {
+                                let name = n.clone();
+                                rsx! {
+                                    div {
+                                        key: "{n}",
+                                        class: "dt-result",
+                                        "data-name-result": "{n}",
+                                        onclick: move |_| ctx.name(&name),
+                                        TableCard { name: n.clone(), size: CardSize::Micro, class: "dt-target dt-tone-name" }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        };
+    }
     if hidden().as_deref() == Some(u.decision.id.as_str()) {
         let (bw, bh) = g.button;
         let r = Rect::new(
@@ -618,9 +787,27 @@ pub fn DecisionWindow(g: Rc<Geometry>, ui: Option<Rc<Ui>>, sel: Selection) -> El
             }
         };
     }
-    let wide: Vec<bool> = tray
+    // Each card drawn alone, unless the question is one dominion.games stacks.
+    let stacked = u
+        .decision
+        .source
+        .as_deref()
+        .is_some_and(|c| STACKED_WINDOWS.contains(&c));
+    let slots: Vec<(usize, Option<usize>)> = tray
         .iter()
-        .map(|&i| {
+        .flat_map(|&i| {
+            let t = &u.inter.targets[i];
+            let n = t.options.len();
+            if t.card.is_some() && n > 1 && !stacked {
+                (0..n).map(|k| (i, Some(k))).collect::<Vec<_>>()
+            } else {
+                vec![(i, None)]
+            }
+        })
+        .collect();
+    let wide: Vec<bool> = slots
+        .iter()
+        .map(|&(i, _)| {
             u.inter.targets[i]
                 .card
                 .as_deref()
@@ -644,7 +831,7 @@ pub fn DecisionWindow(g: Rc<Geometry>, ui: Option<Rc<Ui>>, sel: Selection) -> El
         win.y = (win.y - extra).max(0.0);
     }
     let cards_box = Rect::new(win.x, win.y, win.w, win.h - extra);
-    let row = g.window_row(&cards_box, tray.len(), &wide, 0.0);
+    let row = g.window_row(&cards_box, slots.len(), &wide, 0.0);
     let q = query().trim().to_lowercase();
     let results: Vec<String> = if u.inter.name_any && q.len() >= 2 {
         cards
@@ -681,10 +868,13 @@ pub fn DecisionWindow(g: Rc<Geometry>, ui: Option<Rc<Ui>>, sel: Selection) -> El
                 onclick: move |_| hidden.set(Some(id.clone())),
                 "✕"
             }
-            for (k, &i) in tray.iter().enumerate() {
+            for (k, &(i, copy)) in slots.iter().enumerate() {
                 {
                     let t = &u.inter.targets[i];
-                    let mark = u.mark_target(&sel, i);
+                    let mark = match copy {
+                        Some(c) => u.mark_copy(&sel, i, c),
+                        None => u.mark_target(&sel, i),
+                    };
                     let ways = u.ways_of(Some(i));
                     let label = match (&t.card, &t.zone) {
                         (Some(c), Some(z)) if &t.label == c && !matches!(z.as_str(), "deck" | "hand" | "looking") => {
@@ -693,12 +883,12 @@ pub fn DecisionWindow(g: Rc<Geometry>, ui: Option<Rc<Ui>>, sel: Selection) -> El
                         (Some(c), _) if &t.label == c => None,
                         _ => Some(t.label.clone()),
                     };
-                    let count = (t.options.len() > 1).then_some(t.options.len() as u32);
+                    let count = (copy.is_none() && t.options.len() > 1).then_some(t.options.len() as u32);
                     let w = if wide[k] { row.w * 2.0 } else { row.w };
                     let h = if wide[k] { w * super::layout::WIDE } else { row.h };
                     rsx! {
                         TableCard {
-                            key: "{i}",
+                            key: "{i}:{copy:?}",
                             name: t.card.clone().unwrap_or_default(),
                             size: CardSize::Full,
                             back: t.card.is_none(),

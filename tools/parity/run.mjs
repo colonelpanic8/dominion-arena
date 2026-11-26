@@ -51,6 +51,7 @@ const browser = await chromium.launch({
 });
 
 const PASSWORD = 'parity-password';
+const PLAYERS = ['Alice', 'Bob', 'Carol', 'Dave', 'Erin', 'Frank'];
 
 // The log and chat beside the table: their client is told no history when it joins a
 // game in progress. Also their Force end turn button, offered because Bob's seat has no
@@ -85,10 +86,11 @@ async function runScenario(scenario) {
   });
   const contexts = [];
   try {
-    const alice = await arena.register('Alice', PASSWORD);
-    const bob = await arena.register('Bob', PASSWORD);
-    const game = await arena.startGame(alice, bob, scenario.spec);
-    const driver = new Driver(arena, game, { Alice: alice, Bob: bob });
+    const seats = {};
+    for (const name of PLAYERS.slice(0, scenario.players ?? 2)) seats[name] = await arena.register(name, PASSWORD);
+    const [alice, ...guests] = Object.values(seats);
+    const game = await arena.startGame(alice, guests, scenario.spec);
+    const driver = new Driver(arena, game, seats);
     await driver.init();
     await driver.run(scenario.steps);
 
@@ -112,6 +114,10 @@ async function runScenario(scenario) {
     // Our client opens a game on the starting cards; dominion.games goes straight in.
     const start = await ours.page.$('.dt-start-game');
     if (start) await start.click();
+
+    // Steps played with both clients watching: the game's end, which their client
+    // only shows to a seat that saw it happen.
+    if (scenario.after) await driver.run(scenario.after);
 
     const a = await capture(theirs.page, dir, 'theirs');
     const b = await capture(ours.page, dir, 'ours');

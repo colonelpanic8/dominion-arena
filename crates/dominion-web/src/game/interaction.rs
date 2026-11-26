@@ -172,7 +172,7 @@ pub fn interaction(view: &AgentView, d: &AgentDecision, cards: &CardDb) -> Inter
                 Place::InPlay
             };
             join = true;
-        } else if let (Some(card), "buy" | "pile") = (&o.card, o.action.as_str())
+        } else if let (Some(card), "buy" | "pile" | "name") = (&o.card, o.action.as_str())
             && let Some(p) = pile_of(view, card)
         {
             place = Place::Supply;

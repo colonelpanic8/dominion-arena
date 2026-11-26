@@ -91,7 +91,7 @@ body:has(.dt-root) .topbar { display: none; }
 .dt-picked-copy > .dc-card { height: 100%; box-shadow: 0 0 0 max(1px, 1.33cqw) var(--bc); border-radius: 4.5% / 2.85%; }
 .dt-split-back { position: absolute; inset: 0; transform: translate(6.2%, 6.2%); z-index: -1; }
 .dt-split-back > .dc-card { height: 100%; }
-.dt-inverted > .dt-face { transform: rotate(180deg); }
+.dt-turned > .dt-face { transform: rotate(180deg); }
 .dt-ov { position: absolute; inset: 0; z-index: 25; pointer-events: none; }
 .dt-ov > * { pointer-events: auto; }
 .dt-count {
@@ -118,7 +118,8 @@ body:has(.dt-root) .topbar { display: none; }
 .dt-count span { position: relative; }
 .dt-micro .dt-count { width: auto; height: 100%; aspect-ratio: 1; font-size: 16cqw; }
 .dt-inverted .dt-count { top: auto; left: auto; bottom: 0; right: 0; }
-.dt-plus { position: absolute; right: 2%; bottom: 2%; width: 20cqw; aspect-ratio: 1; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; pointer-events: none; }
+/* dominion.games' sign: a fifth of the card's shorter side, in its corner. */
+.dt-plus { position: absolute; right: 0; bottom: 0; height: min(20%, 20cqw); aspect-ratio: 1; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; pointer-events: none; }
 .dt-plus img { width: 100%; height: 100%; }
 .dt-micro .dt-plus { width: auto; height: 50%; }
 /* Upstream's sign is a fifth of the card's shorter side, in its corner. */
@@ -176,29 +177,18 @@ body:has(.dt-root) .topbar { display: none; }
 /* Landscape names run along the bottom of the card. */
 .dt-setup-set-aside.dt-wide .dt-tokens:has(.dt-b-trait) { top: 14%; bottom: auto; }
 
-/* The Boons and Hexes decks beside their discard piles. */
-.dt-deckback {
-  position: absolute;
-  box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: calc(0.6 * var(--vh));
-  border: max(1px, calc(0.25 * var(--vh))) solid #000;
-  border-radius: calc(0.6 * var(--vh));
-  box-shadow: 0 0 0 1px #9a8a62 inset;
-  background: linear-gradient(160deg, #314a7d, #16223d);
-  color: #f2e6c8;
-  font-family: var(--title, serif);
-  text-shadow: 0 0 3px #000;
-}
-.dt-deck-hexes { background: linear-gradient(160deg, #5b3470, #24122e); }
-.dt-deckback:hover { border-color: #eee; }
-.dt-deckback-label { font-size: calc(1.8 * var(--vh)); }
-.dt-deckback-n { font-family: var(--num, sans-serif); font-size: calc(2.2 * var(--vh)); }
+/* What a pile or landscape counts, top left (dominion.games' token-layer-counters). */
+.dt-pile-counters { position: absolute; left: 11%; top: 20%; width: 78%; display: flex; align-items: center; }
+.dt-micro .dt-pile-counters { left: 18%; top: 10%; height: 80%; width: 80%; justify-content: flex-end; }
+.dt-pile-counter { position: relative; display: flex; align-items: center; justify-content: center; font-family: var(--num); font-weight: 700; line-height: 1; paint-order: stroke fill; }
+.dt-pile-counter-coin { font-family: DomNum, var(--num); }
+.dt-pile-counter img { position: absolute; inset: 0; width: 100%; height: 100%; }
+.dt-pile-counter span { position: relative; }
 .dt-cube img { height: calc(2.6 * var(--vh)); }
-.dt-tokens .dt-cube img { height: 18cqw; }
+/* Projects' cubes: dominion.games' row from a tenth in, 45% down, 3vh boxes 1.2vh apart
+   with the cube drawn smaller in each. */
+.dt-cubes { position: absolute; left: calc(10% + 0.6 * var(--vh)); right: 10%; top: calc(45% + 0.35 * var(--vh)); display: flex; gap: calc(0.85 * var(--vh)); pointer-events: auto; }
+.dt-cubes .dt-cube img { height: calc(2.35 * var(--vh)); display: block; }
 
 /* Tabs on the edges: the trash, mats, set-aside cards. */
 .dt-tab {
@@ -347,8 +337,9 @@ button.dt-bar-rating:hover { border-color: #f0cf7a; background: rgba(240, 207, 1
 .dt-actions { color: #bfb; }
 .dt-buys { color: #fdb; }
 .dt-zero { color: #666; }
-.dt-status-held { display: inline-flex; align-items: center; gap: calc(0.6 * var(--vh)); min-width: 0; overflow: hidden; }
-.dt-status-held .dt-reminder { width: calc(3.3 * var(--vh)); height: calc(3.3 * var(--vh)); font-size: calc(2.8 * var(--vh)); }
+.dt-status-held { display: inline-flex; align-items: center; gap: calc(0.45 * var(--vh)); min-width: 0; overflow: hidden; }
+/* dominion.games' status bar reminders: 3vh square, the number 95% of that. */
+.dt-status-held .dt-reminder { width: calc(3 * var(--vh)); height: calc(3 * var(--vh)); font-size: calc(2.85 * var(--vh)); }
 .dt-status-held .dt-badge { height: calc(3.3 * var(--vh)); }
 .dt-status-held .dt-badge-n { font-size: calc(1.9 * var(--vh)); }
 .dt-status-held .dt-bar-held { font-size: calc(2 * var(--vh)); }
@@ -444,7 +435,8 @@ button.dt-bar-rating:hover { border-color: #f0cf7a; background: rgba(240, 207, 1
 .dt-btn:hover:not(:disabled) { background: rgba(0, 0, 0, 0.95); }
 .dt-btn:disabled { color: #666; border-color: #666; cursor: default; }
 .dt-btn.dt-on { background: #fff; color: #000; }
-.dt-btn-label { flex: 1; }
+.dt-btn-label { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; white-space: nowrap; }
+.dt-btn-line { line-height: 1.05; }
 .dt-btn-img { position: relative; flex: none; height: 80%; aspect-ratio: 1; display: flex; align-items: center; justify-content: center; }
 .dt-btn-img img { max-height: 100%; max-width: 100%; }
 .dt-btn:disabled .dt-btn-img img { opacity: 0.4; }
@@ -454,7 +446,7 @@ button.dt-bar-rating:hover { border-color: #f0cf7a; background: rgba(240, 207, 1
 .dt-ability { justify-content: flex-start; overflow: hidden; }
 .dt-ability-art { position: absolute; inset: 0; opacity: 0.55; pointer-events: none; }
 .dt-ability-art .dt-c { width: 100%; }
-.dt-ability .dt-btn-label { position: relative; text-align: left; }
+.dt-ability .dt-btn-label { position: relative; text-align: left; align-items: flex-start; }
 .dt-slider { position: absolute; display: flex; gap: calc(1 * var(--vh)); align-items: center; padding: 0 calc(1 * var(--vh)); background: rgba(0, 0, 0, 0.8); z-index: 14000; box-sizing: border-box; }
 .dt-slider input { flex: 1; }
 .dt-slider .dt-slider-go { position: static; height: 80%; min-width: 30%; }
@@ -498,6 +490,41 @@ button.dt-bar-rating:hover { border-color: #f0cf7a; background: rgba(240, 207, 1
 .dt-search { flex: 0 0 30%; font: inherit; padding: 0.2em 0.4em; }
 .dt-results { display: flex; flex-wrap: wrap; gap: calc(0.5 * var(--vh)); flex: 1; }
 .dt-result { width: calc(16 * var(--vh)); cursor: pointer; }
+/* Naming a card: dominion.games' entry box, and the cards matching what is typed. */
+.dt-name-entry {
+  position: absolute;
+  left: calc(35 * var(--vw));
+  top: calc(53 * var(--vh));
+  width: calc(18 * var(--vw));
+  height: calc(6 * var(--vh));
+  padding: 0 0 0 calc(1 * var(--vw));
+  z-index: 2000;
+  background: rgba(0, 0, 0, 0.9);
+  opacity: 0.8;
+  border: none;
+  border-bottom: 2px solid #fff;
+  color: #fff;
+  font-family: var(--title);
+  font-size: calc(2.4 * var(--vh));
+  text-transform: uppercase;
+}
+.dt-name-entry::placeholder { color: inherit; }
+.dt-name-entry:hover, .dt-name-entry:focus { opacity: 1; outline: none; }
+.dt-name-gallery {
+  position: absolute;
+  left: calc(17 * var(--vw));
+  top: calc(16 * var(--vh));
+  width: calc(50 * var(--vw));
+  height: calc(30 * var(--vh));
+  z-index: 5000;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: center;
+  justify-content: center;
+  gap: calc(0.5 * var(--vh));
+  background: rgba(0, 0, 0, 0.4);
+  border: 2px solid #fff;
+}
 
 /* The log and what our client keeps under it. */
 .dt-log-wrap {
@@ -573,21 +600,27 @@ button.dt-bar-rating:hover { border-color: #f0cf7a; background: rgba(240, 207, 1
 .dt-study-member:hover, .dt-study-member:focus-visible { z-index: 1; outline: 2px solid #fff; }
 .dt-study-card > .dc-card, .dt-study-member > .dc-card { border-radius: 4.5% / 2.85%; box-shadow: 0 0 0 2px #000; }
 
-/* The end of the game. */
+/* The end of the game: dominion.games' modal window, centred on the page. */
 .dt-ended {
   position: absolute;
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
-  padding: calc(2 * var(--vh)) calc(3 * var(--vh));
-  background: #000;
-  border: calc(0.2 * var(--vh)) solid #ccc;
-  border-radius: calc(1 * var(--vh));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: calc(1 * var(--vw));
+  background: rgba(0, 0, 0, 0.9);
+  border: 2px solid #fff;
+  border-radius: 16px;
+  font-family: var(--ui);
+  font-size: calc(1.8 * var(--vw));
+  line-height: 1.2;
   text-align: center;
   z-index: 26000;
 }
-.dt-ended p { margin: 0 0 calc(1 * var(--vh)); font-size: calc(3.5 * var(--vh)); }
-.dt-ok { background: #000; color: #fff; border: calc(0.25 * var(--vh)) solid #fff; font-family: var(--ui); font-weight: 700; font-size: calc(3 * var(--vh)); padding: 0 0.3em; cursor: pointer; }
+.dt-ended p { margin: 0; }
+.dt-ok { display: inline-flex; align-items: center; box-sizing: border-box; height: calc(5 * var(--vh)); margin-top: calc(1.5 * var(--vh)); background: rgba(0, 0, 0, 0.6); color: #fff; border: 2px solid #fff; font-family: var(--ui); font-weight: 700; font-size: calc(3 * var(--vh)); padding: calc(0.7 * var(--vh)); cursor: pointer; }
 .dt-score {
   position: absolute;
   inset: 0;

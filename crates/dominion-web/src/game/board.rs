@@ -60,13 +60,14 @@ impl Board {
             .or_else(|| self.opponents.first().filter(|_| self.watching))
     }
 
-    /// The Project cubes a player bar shows: dominion.games draws one per Project in the
-    /// game, at most two, whoever has bought them.
-    pub fn project_cubes(&self) -> usize {
+    /// The Project cubes `player`'s bar shows: dominion.games gives each player one per
+    /// Project in the game, at most two, and takes one off for each Project they bought.
+    pub fn project_cubes(&self, player: &PlayerEntry) -> usize {
         (self.landscapes.iter())
             .filter(|l| l.kind == "project")
             .count()
             .min(2)
+            .saturating_sub(player.projects.len())
     }
 
     /// The players drawn as opponents: everyone but [`Board::front`].
@@ -273,6 +274,8 @@ pub struct PlayerEntry {
     pub states: Vec<String>,
     pub boons: Vec<String>,
     pub artifacts: Vec<String>,
+    /// The player's lasting effects by card, with how many each card has.
+    pub lasting: Vec<(String, u32)>,
     /// Every card the player owns, as far as known.
     pub owned: Zone,
     pub unlocated: Vec<Stack>,
@@ -763,6 +766,19 @@ pub fn runs(cards: &[InPlay]) -> Vec<Stack> {
     out
 }
 
+/// A player's lasting effects by card, with how many each has, in dominion.games' order.
+fn lasting_reminders(view: &AgentView, seat: u8, cards: &CardDb) -> Vec<(String, u32)> {
+    let mut out: Vec<(String, u32)> = vec![];
+    for l in view.lasting.iter().filter(|l| l.owner == seat) {
+        match out.iter_mut().find(|(c, _)| *c == l.card) {
+            Some((_, n)) => *n += 1,
+            None => out.push((l.card.clone(), 1)),
+        }
+    }
+    out.sort_by_key(|(c, _)| cards.order(c));
+    out
+}
+
 fn player_entry(
     p: &PlayerView,
     view: &AgentView,
@@ -810,6 +826,7 @@ fn player_entry(
         states: p.states.clone(),
         boons: p.boons.clone(),
         artifacts: p.artifacts.clone(),
+        lasting: lasting_reminders(view, p.index, cards),
         owned: Zone {
             count: p.owned.known.values().sum::<u32>() + p.owned.unknown,
             known: stacks(&p.owned.known, cards),
@@ -1026,14 +1043,13 @@ pub fn board(
         .iter()
         .map(|l| {
             let mut badges = vec![];
-            if let Some(vp) = l.vp {
+            // dominion.games draws a landscape's VP only while it has some.
+            if let Some(vp) = l.vp.filter(|&vp| vp != 0) {
                 badges.push(badge("vp", format!("{vp} VP"), Some(vp)));
             }
-            if let Some(s) = l.suns {
+            // A Prophecy in effect has no Sun tokens left, and dominion.games draws none.
+            if let Some(s) = l.suns.filter(|&s| s > 0) {
                 badges.push(badge("sun", format!("{s} Sun(s)"), Some(s as i32)));
-            }
-            if l.active == Some(true) {
-                badges.push(badge("active", "In effect".into(), None));
             }
             LandscapeEntry {
                 card: l.card.clone(),

@@ -24,6 +24,7 @@
 .dc-overlay { inset: 0; z-index: 20; pointer-events: none; }
 .dc-overlay > * { pointer-events: auto; }
 .dc-attached { z-index: 6; }
+.dc-on-banner :is(.dc-bg, .dc-template, .dc-frame) { display: none; }
 
 .dc-art { object-fit: cover; object-position: top; z-index: 1; }
 .dc-art-ph {
@@ -36,6 +37,7 @@
   justify-content: center;
 }
 .dc-template { object-fit: fill; z-index: 2; }
+.dc-template.dc-inverted { transform: rotate(180deg); }
 
 /* Drawn frames, for cards the cache has no template for. */
 .dc-frame {
@@ -214,15 +216,6 @@
 .dc-cost .dc-debt { font-size: .66em; width: 1.44em; height: 1.44em; padding-top: .04em; }
 .dc-cost .dc-potion { width: .65em; height: 1em; }
 .dc-cost > .dc-i + .dc-i { margin-left: -.15em; }
-.dc-mark {
-  font-family: var(--dc-num);
-  font-weight: bold;
-  font-size: .45em;
-  align-self: flex-start;
-  margin-left: -.1em;
-  color: #000;
-  text-shadow: 0 0 .15em #fff, 0 0 .15em #fff;
-}
 
 .dc-symbol { font-size: 30cqw; }
 .dc-symbol .dc-i { vertical-align: 0; }

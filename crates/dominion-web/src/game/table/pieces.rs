@@ -99,8 +99,61 @@ fn badge_short(kind: &str) -> &str {
         "sun" => "☀",
         "trashing" => "Tr",
         "estate" => "Est",
-        "active" => "✓",
         other => other,
+    }
+}
+
+/// How dominion.games draws a badge that counts something on a pile or landscape (its
+/// `CounterName`s): the image, the number's colour, whether it is outlined, and whether
+/// it is in the coin font.
+fn counter_look(kind: &str) -> Option<(&'static str, &'static str, bool, bool)> {
+    Some(match kind {
+        "vp" => ("images/elements/victory_outlined.png", "black", true, true),
+        "debt" => ("images/elements/debt_130.png", "white", true, true),
+        "embargo" | "blockade" => ("images/elements/embargo.png", "black", false, false),
+        "trade-route" => ("images/elements/coin-token.png", "black", false, false),
+        "sun" => ("images/elements/rsun.png", "black", true, false),
+        "sinister-plot" => ("images/elements/sinister-plot.png", "black", true, true),
+        "favors" => ("images/elements/favors.png", "white", true, false),
+        _ => return None,
+    })
+}
+
+/// A pile's or landscape's counters, in a row from the card's top left (dominion.games'
+/// `token-layer-counters`), each `n` card widths (cqw) square.
+#[component]
+fn Counters(counters: Vec<Badge>, n: f64) -> Element {
+    let assets = use_assets();
+    rsx! {
+        span { class: "dt-pile-counters",
+            for (i, b) in counters.iter().enumerate() {
+                {
+                    let (image, color, stroke, coin) = counter_look(&b.kind).unwrap_or_default();
+                    let src = assets.file_url(image);
+                    let value = b.count.unwrap_or(1);
+                    let outline = if stroke {
+                        let other = if color == "white" { "black" } else { "white" };
+                        format!("-webkit-text-stroke:{:.2}cqw {other};", 0.1 * n)
+                    } else {
+                        String::new()
+                    };
+                    rsx! {
+                        span {
+                            key: "{i}",
+                            class: "dt-pile-counter",
+                            class: if coin { "dt-pile-counter-coin" },
+                            "data-badge": "{b.kind}",
+                            title: "{b.text}",
+                            style: "width:{n:.2}cqw;height:{n:.2}cqw;font-size:{0.95 * n:.2}cqw;color:{color};{outline}",
+                            if let Some(src) = src {
+                                img { src, alt: "", draggable: "false" }
+                            }
+                            span { "{value}" }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -174,20 +227,41 @@ pub fn reminder_icon(name: &str) -> (String, Option<u8>) {
 /// reminder icon, or its name where the cache has none. Clicking studies the card.
 #[component]
 pub fn Reminder(name: String) -> Element {
-    let ctx = use_table();
     let assets = use_assets();
     let (path, n) = reminder_icon(&name);
     let Some(src) = assets.file_url(&path) else {
         return rsx! { span { class: "dt-bar-held", CardName { name } } };
     };
+    rsx! { ReminderIcon { name, src, n: n.map(u32::from) } }
+}
+
+/// A lasting effect's reminder beside its player's name: its icon (dominion.games has
+/// few: most draw only how many there are, from 2) and the number of them.
+#[component]
+pub fn LastingReminder(name: String, count: u32) -> Element {
+    let assets = use_assets();
+    let (path, _) = reminder_icon(&name);
+    let src = assets.file_url(&path).unwrap_or_default();
+    let n = (count > 1).then_some(count);
+    rsx! { ReminderIcon { name, src, n } }
+}
+
+#[component]
+fn ReminderIcon(name: String, src: String, n: Option<u32>) -> Element {
+    let ctx = use_table();
     let n1 = name.clone();
     let n2 = name.clone();
+    let style = if src.is_empty() {
+        String::new()
+    } else {
+        format!("background-image:url('{src}');")
+    };
     rsx! {
         span {
             class: "dt-reminder",
             title: "{name}",
             "data-reminder": "{name}",
-            style: "background-image:url('{src}');",
+            style,
             onclick: move |e| {
                 e.stop_propagation();
                 ctx.study(&n1);
@@ -282,6 +356,9 @@ pub fn TableCard(
     /// a click on the rest of the card plays it as itself.
     #[props(default)]
     ways: Vec<String>,
+    /// A name to print instead of the card's (`CardView::title`).
+    #[props(default)]
+    title: Option<String>,
 ) -> Element {
     let ctx = use_table();
     let assets = use_assets();
@@ -291,6 +368,7 @@ pub fn TableCard(
         picked,
         ordered,
         tone,
+        copy,
     } = mark;
     let n_menu = name.clone();
     let n_inspect = name.clone();
@@ -321,6 +399,14 @@ pub fn TableCard(
             (w.clone(), art)
         })
         .collect();
+    let (counters, badges): (Vec<Badge>, Vec<Badge>) = badges
+        .into_iter()
+        .partition(|b| counter_look(&b.kind).is_some() && b.player.is_none());
+    // A counter is 0.3 of the card's shorter side; on a strip, 0.9 of its height.
+    let counter_n = match size {
+        CardSize::Micro => 90.0 * f64::from(crate::card::layout::MICRO_RATIO),
+        _ => 30.0 * f64::from(crate::card::layout::ratio(wide, size)).min(1.0),
+    };
     let n_picked = picked.len() as u32;
     // A stack's picked copies split off it, tilted. The copy and the crosses stay mounted
     // and are only shown or hidden, so picking never reloads their images.
@@ -349,10 +435,12 @@ pub fn TableCard(
                 CardView {
                     name: name.clone(),
                     size,
+                    inverted,
                     cost: cost.clone(),
                     shifted: count.is_some() && size != CardSize::Full,
                     pile: pile.clone(),
                     attached: attached.clone(),
+                    title: title.clone(),
                     if let Some((held, cost)) = holds.clone() {
                         div {
                             class: "dt-held-pile",
@@ -397,6 +485,7 @@ pub fn TableCard(
             class: if clickable { "dt-click" },
             class: if wide { "dt-wide" },
             class: if inverted { "dt-inverted" },
+            class: if inverted && back { "dt-turned" },
             class: if at.is_some() { "dt-at" },
             style: "{style}{z_style}",
             "data-name": "{name}",
@@ -406,7 +495,11 @@ pub fn TableCard(
             onclick: move |e| {
                 if let Some(t) = target {
                     e.stop_propagation();
-                    ctx.act(t);
+                    if copy && whole_picked {
+                        ctx.unpick(t);
+                    } else {
+                        ctx.act(t);
+                    }
                 } else if let Some(p) = open.clone() {
                     e.stop_propagation();
                     ctx.open(p);
@@ -517,11 +610,18 @@ pub fn TableCard(
                         "All"
                     }
                 }
-                if !badges.is_empty() || !cubes.is_empty() {
+                if !counters.is_empty() {
+                    Counters { counters: counters.clone(), n: counter_n }
+                }
+                if !badges.is_empty() {
                     span { class: "dt-tokens",
                         for (i, b) in badges.iter().enumerate() {
                             BadgeView { key: "{i}", badge: b.clone() }
                         }
+                    }
+                }
+                if !cubes.is_empty() {
+                    span { class: "dt-cubes",
                         for (seat, who) in cubes.iter() {
                             Cube { key: "c{seat}", seat: *seat, name: who.clone() }
                         }
