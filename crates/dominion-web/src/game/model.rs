@@ -340,27 +340,56 @@ fn ModelPane() -> Element {
     }
 }
 
-/// The chat, and under a second tab the viewer's side of a seat they share with a model
-/// (`ModelPane`), with who holds that seat changed from the tabs' row. `heading`: the
-/// chat alone is headed, as a panel of the plain page is.
+/// The chat, and under further tabs the viewer's side of a seat they share with a model
+/// (`ModelPane`), with who holds that seat changed from the tabs' row, and the agents'
+/// transcript (`AgentsPane`). `heading`: the chat alone is headed, as a panel of the plain
+/// page is.
 #[component]
 pub fn Aside(heading: bool) -> Element {
     let ctx = use_game();
     let models = ctx.models;
-    let chat = ctx.offers.read().chat;
+    let offers = ctx.offers;
+    let chat = offers.read().chat;
+    let transcript = offers.read().transcript.clone();
     let shown = (ctx.state.read().view.as_ref()).and_then(|v| v.seat);
     let shared = models.shared(shown);
     let has_model = shared.is_some() || (models.attachable)().is_some();
     let mut tab = use_signal(|| "chat");
+    // The transcript is loaded once its tab is first opened, and followed from then on.
+    let mut agents_opened = use_signal(|| false);
+    let feed_game = use_memo(move || {
+        agents_opened()
+            .then(|| offers.read().transcript.clone())
+            .flatten()
+    });
+    let feed = crate::transcript::use_feed(feed_game);
+    let show = crate::transcript::use_show();
     // Notes written before the page had the seat are no news.
     let mut seen = use_signal(|| None::<usize>);
+    let tabs: Vec<&str> = [
+        chat.then_some("chat"),
+        has_model.then_some("model"),
+        transcript.is_some().then_some("agents"),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    let current = tabs
+        .iter()
+        .copied()
+        .find(|&t| t == tab())
+        .or(tabs.first().copied());
+    let on_model = current == Some("model");
+    let on_agents = current == Some("agents");
+    if on_agents && !agents_opened() {
+        agents_opened.set(true);
+    }
     let notes = shared.as_ref().map(|s| s.notes.len());
-    let on_model = has_model && (tab() == "model" || !chat);
     if notes.is_some() && (on_model || seen().is_none()) && seen() != notes {
         seen.set(notes);
     }
     let unread = notes.unwrap_or(0).saturating_sub(seen().unwrap_or(0));
-    if !has_model {
+    if tabs.len() <= 1 && !on_model && !on_agents {
         return rsx! {
             if chat {
                 if heading { h3 { "Chat" } }
@@ -379,18 +408,28 @@ pub fn Aside(heading: bool) -> Element {
         div { class: "aside-tabs",
             span { class: "aside-tablist", role: "tablist",
                 if chat {
-                    button { class: if on_model { "toggle" } else { "toggle on" }, role: "tab", "data-tab": "chat",
-                        "aria-selected": "{!on_model}",
+                    button { class: if current == Some("chat") { "toggle on" } else { "toggle" }, role: "tab", "data-tab": "chat",
+                        "aria-selected": "{current == Some(\"chat\")}",
                         onclick: move |e| { e.stop_propagation(); tab.set("chat"); },
                         "Chat"
                     }
                 }
-                button { class: if on_model { "toggle on" } else { "toggle" }, role: "tab", "data-tab": "model",
-                    "aria-selected": "{on_model}",
-                    title: tab_title,
-                    onclick: move |e| { e.stop_propagation(); tab.set("model"); },
-                    "Model"
-                    if unread > 0 { span { class: "model-unread", "data-unread": "{unread}", "{unread}" } }
+                if has_model {
+                    button { class: if on_model { "toggle on" } else { "toggle" }, role: "tab", "data-tab": "model",
+                        "aria-selected": "{on_model}",
+                        title: tab_title,
+                        onclick: move |e| { e.stop_propagation(); tab.set("model"); },
+                        "Model"
+                        if unread > 0 { span { class: "model-unread", "data-unread": "{unread}", "{unread}" } }
+                    }
+                }
+                if transcript.is_some() {
+                    button { class: if on_agents { "toggle on" } else { "toggle" }, role: "tab", "data-tab": "agents",
+                        "aria-selected": "{on_agents}",
+                        title: "What the agents at this game were given and returned",
+                        onclick: move |e| { e.stop_propagation(); tab.set("agents"); },
+                        "Agents"
+                    }
                 }
             }
             if let (Some(s), Some(name), true) = (shared, name, on_model) {
@@ -412,7 +451,13 @@ pub fn Aside(heading: bool) -> Element {
                 }
             }
         }
-        if on_model { ModelPane {} } else { super::chat::Chat {} }
+        if on_model {
+            ModelPane {}
+        } else if let (true, Some(game)) = (on_agents, transcript) {
+            crate::transcript::AgentsPane { feed, show, game }
+        } else {
+            super::chat::Chat {}
+        }
     }
 }
 

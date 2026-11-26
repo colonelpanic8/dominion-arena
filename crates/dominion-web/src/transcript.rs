@@ -1,4 +1,5 @@
-//! A separate, resumable timeline of agent output and Dominion actions.
+//! A separate, resumable timeline of agent output and Dominion actions: beside a game's chat
+//! (`AgentsPane`), over it in full, or on a page of its own.
 
 use crate::api;
 use crate::app::Route;
@@ -186,26 +187,34 @@ fn clock(time: u64) -> String {
     )
 }
 
-#[component]
-pub fn TranscriptPage(id: String) -> Element {
-    let game = use_signal(move || id);
-    let timeline = use_signal(Timeline::default);
+/// A game's transcript: loaded, then followed as it grows, while `game` names it.
+#[derive(Clone, Copy, PartialEq)]
+pub struct Feed {
+    pub timeline: Signal<Timeline>,
+    pub error: Signal<Option<String>>,
+    pub ready: Signal<bool>,
+}
+
+pub fn use_feed(game: Memo<Option<String>>) -> Feed {
+    let mut timeline = use_signal(Timeline::default);
     let mut error = use_signal(|| None::<String>);
     let mut ready = use_signal(|| false);
-    let mut selected = use_signal(|| None::<u8>);
-    let reasoning = use_signal(|| true);
-    let follow = use_signal(|| true);
-    let inputs = use_signal(|| true);
-    let tools = use_signal(|| true);
-    let expand = use_signal(|| false);
+    let mut loaded = use_signal(|| None::<String>);
     let account = crate::account::use_account();
     use_resource(move || {
         let _ = account.name();
         let game = game();
-        let token = crate::session::seats(&game)
-            .first()
-            .map(|s| s.token.clone());
         async move {
+            let Some(game) = game else { return };
+            if loaded.peek().as_ref() != Some(&game) {
+                timeline.set(Timeline::default());
+                ready.set(false);
+                error.set(None);
+                loaded.set(Some(game.clone()));
+            }
+            let token = crate::session::seats(&game)
+                .first()
+                .map(|s| s.token.clone());
             match refresh(timeline, &game, token.as_deref()).await {
                 Ok(()) => {
                     error.set(None);
@@ -231,15 +240,93 @@ pub fn TranscriptPage(id: String) -> Element {
             futures_util::future::join(feed, changed).await;
         }
     });
+    Feed {
+        timeline,
+        error,
+        ready,
+    }
+}
+
+/// What of a transcript is shown: one seat's or all, and which kinds of block.
+#[derive(Clone, Copy, PartialEq)]
+pub struct Show {
+    seat: Signal<Option<u8>>,
+    reasoning: Signal<bool>,
+    inputs: Signal<bool>,
+    tools: Signal<bool>,
+    expand: Signal<bool>,
+    follow: Signal<bool>,
+}
+
+pub fn use_show() -> Show {
+    Show {
+        seat: use_signal(|| None),
+        reasoning: use_signal(|| true),
+        inputs: use_signal(|| true),
+        tools: use_signal(|| true),
+        expand: use_signal(|| false),
+        follow: use_signal(|| true),
+    }
+}
+
+impl Show {
+    fn blocks(&self, timeline: &Timeline) -> Vec<(Block, Option<Block>)> {
+        let (seat, reasoning, inputs, tools) = (
+            (self.seat)(),
+            (self.reasoning)(),
+            (self.inputs)(),
+            (self.tools)(),
+        );
+        paired(
+            timeline
+                .blocks
+                .iter()
+                .filter(|b| seat.is_none_or(|s| b.seat == s || b.kind == Kind::Game))
+                .filter(|b| reasoning || b.kind != Kind::Reasoning)
+                .filter(|b| inputs || !matches!(b.kind, Kind::Observation | Kind::System))
+                .filter(|b| tools || !matches!(b.kind, Kind::Call | Kind::Result))
+                .cloned()
+                .collect(),
+        )
+    }
+}
+
+/// The agents in a transcript, by seat.
+fn agents(timeline: &Timeline) -> BTreeMap<u8, String> {
+    (timeline.blocks.iter())
+        .filter(|b| b.kind != Kind::Game)
+        .map(|b| (b.seat, b.agent.clone()))
+        .collect()
+}
+
+/// Keeps the newest block in sight while `follow` is on: `script` scrolls to it.
+fn use_follow(feed: Feed, show: Show, script: &'static str) {
     use_effect(move || {
-        let _ = timeline.read().next;
-        if follow() {
+        let _ = feed.timeline.read().next;
+        if (show.follow)() {
             #[cfg(all(feature = "web", target_arch = "wasm32"))]
-            document::eval(
-                "document.querySelector('[data-trace-end]')?.scrollIntoView({block:'end'})",
-            );
+            document::eval(script);
+            #[cfg(not(all(feature = "web", target_arch = "wasm32")))]
+            let _ = script;
         }
     });
+}
+
+/// Scrolls every transcript that scrolls by itself (`data-trace-scroll`) to its end.
+const SCROLL_OWN: &str = "for (const e of document.querySelectorAll('[data-trace-scroll]')) e.scrollTop = e.scrollHeight";
+
+const DESCRIPTION: &str = "Everything each model was given and everything it returned, in order: its system prompt, prompts, reasoning, replies, tool calls and what they returned, with the game's events. Long inputs and results are folded; open them, or expand everything. Transcripts may reveal hidden cards. Reasoning appears when the model provides it. Times are UTC.";
+
+#[component]
+pub fn TranscriptPage(id: String) -> Element {
+    let game = use_signal(move || id);
+    let feed = use_feed(use_memo(move || Some(game())));
+    let show = use_show();
+    use_follow(
+        feed,
+        show,
+        "document.querySelector('[data-trace-end]')?.scrollIntoView({block:'end'})",
+    );
     // An official account's game is shown on that account's page.
     let lobby = crate::lobby::use_lobby().lobby;
     let back = match game().strip_prefix(OFFICIAL_GAME_PREFIX) {
@@ -250,93 +337,47 @@ pub fn TranscriptPage(id: String) -> Element {
                 account: a.id.clone(),
             }),
     };
-    let state = timeline.read();
-    let agents: BTreeMap<u8, String> = state
-        .blocks
-        .iter()
-        .filter(|b| b.kind != Kind::Game)
-        .map(|b| (b.seat, b.agent.clone()))
-        .collect();
-    let blocks: Vec<_> = state
-        .blocks
-        .iter()
-        .filter(|b| selected().is_none_or(|s| b.seat == s || b.kind == Kind::Game))
-        .filter(|b| reasoning() || b.kind != Kind::Reasoning)
-        .filter(|b| inputs() || !matches!(b.kind, Kind::Observation | Kind::System))
-        .filter(|b| tools() || !matches!(b.kind, Kind::Call | Kind::Result))
-        .cloned()
-        .collect();
-    let blocks = paired(blocks);
     rsx! {
         document::Title { "Agent transcript · Dominion" }
         document::Style { "{CSS}" }
+        Full { feed, show, game: game(),
+            Link { class:"button copper",to:back,"Back to game" }
+        }
+    }
+}
+
+/// The whole transcript: the seats and what is shown beside the timeline. `children` is
+/// the way back to the game.
+#[component]
+fn Full(feed: Feed, show: Show, game: String, children: Element) -> Element {
+    rsx! {
         section { class:"agent-transcript",
             header { class:"transcript-heading",
                 div {
                     p { class:"transcript-eyebrow", "Game {game}" }
                     h1 { "Agent Transcript" }
-                    p { class:"transcript-description", "Everything each model was given and everything it returned, in order: its system prompt, prompts, reasoning, replies, tool calls and what they returned, with the game's events. Long inputs and results are folded; open them, or expand everything. Transcripts may reveal hidden cards. Reasoning appears when the model provides it. Times are UTC." }
+                    p { class:"transcript-description", "{DESCRIPTION}" }
                 }
-                Link { class:"button copper",to:back,"Back to game" }
+                {children}
             }
             div { class:"transcript-body",
                 aside { class:"transcript-side",
                     section { class:"panel", role:"group", "aria-label":"Seats",
                         h3 { "Seats" }
-                        div { class:"transcript-seats",
-                            button { class:if selected().is_none(){"toggle on"}else{"toggle"}, "aria-pressed":"{selected().is_none()}", onclick:move |_|selected.set(None), "All seats" }
-                            for (seat,name) in agents {
-                                button { key:"{seat}", class:if selected()==Some(seat){"toggle on"}else{"toggle"}, "aria-pressed":"{selected()==Some(seat)}", style:"--seat: var(--seat-{seat % 6})", onclick:move |_|selected.set(Some(seat)),
-                                    span { class:"seat-dot" } "P{seat+1} · {name}"
-                                }
-                            }
-                        }
+                        Seats { feed, show }
                     }
                     section { class:"panel", role:"group", "aria-label":"Show",
                         h3 { "Show" }
-                        Switch { label:"Reasoning", on:reasoning }
-                        Switch { label:"Prompts", on:inputs }
-                        Switch { label:"Tool calls and results", on:tools }
-                        Switch { label:"Expand everything", on:expand }
-                        Switch { label:"Follow latest", on:follow }
+                        Switch { label:"Reasoning", on:show.reasoning }
+                        Switch { label:"Prompts", on:show.inputs }
+                        Switch { label:"Tool calls and results", on:show.tools }
+                        Switch { label:"Expand everything", on:show.expand }
+                        Switch { label:"Follow latest", on:show.follow }
                     }
                 }
                 section { class:"panel transcript-main",
                     h3 { "Timeline" }
-                    if let Some(message)=error() { p {class:"transcript-error",role:"alert","{message}"} }
-                    if !ready() && error().is_none() {p {class:"transcript-empty",role:"status","Loading transcript…"}}
-                    if ready() && blocks.is_empty() {p {class:"transcript-empty",role:"status","Waiting for agent activity. New output will appear here automatically."}}
-                    ol {class:"transcript-timeline", "aria-label":"Agent activity",
-                        for (block, result) in blocks {
-                            li {key:"{block.sequence}",class:format!("trace-block trace-{:?}",block.kind).to_lowercase(), style:"--seat: var(--seat-{block.seat % 6})",
-                                time {"{clock(block.time)}"}
-                                div { class:"trace-content",
-                                    if block.kind==Kind::Game {
-                                        p { class:"trace-game-line", span {class:"trace-kind","Game"} "{block.text}" }
-                                    } else {
-                                        header {
-                                            span {class:"trace-kind", if result.is_some() { "Tool call and result" } else { "{label(block.kind)}" }}
-                                            span {class:"trace-agent", span { class:"seat-dot" } "P{block.seat+1} · {block.agent}"}
-                                        }
-                                        if block.kind == Kind::Call {
-                                            div { class:"trace-call-body",
-                                                Body { kind: block.kind, text: block.text.clone(), expand: expand() }
-                                            }
-                                        } else {
-                                            Body { kind: block.kind, text: block.text.clone(), expand: expand() }
-                                        }
-                                        if let Some(result) = result {
-                                            div { class:"trace-result trace-paired",
-                                                span { class:"trace-kind", "Result" }
-                                                span { class:"trace-lines", " · {took(result.time.saturating_sub(block.time))}" }
-                                                Body { kind: result.kind, text: result.text.clone(), expand: expand() }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    Entries { feed, show }
                     div {"data-trace-end":"", "aria-hidden":"true"}
                 }
             }
@@ -344,8 +385,114 @@ pub fn TranscriptPage(id: String) -> Element {
     }
 }
 
-/// A block's text: folded behind a summary when it is model input or a tool's result
-/// too long to read at a glance.
+#[component]
+fn Seats(feed: Feed, show: Show) -> Element {
+    let mut selected = show.seat;
+    let agents = agents(&feed.timeline.read());
+    rsx! {
+        div { class:"transcript-seats",
+            button { class:if selected().is_none(){"toggle on"}else{"toggle"}, "aria-pressed":"{selected().is_none()}", onclick:move |_|selected.set(None), "All seats" }
+            for (seat,name) in agents {
+                button { key:"{seat}", class:if selected()==Some(seat){"toggle on"}else{"toggle"}, "aria-pressed":"{selected()==Some(seat)}", style:"--seat: var(--seat-{seat % 6})", onclick:move |_|selected.set(Some(seat)),
+                    span { class:"seat-dot" } "P{seat+1} · {name}"
+                }
+            }
+        }
+    }
+}
+
+/// The timeline, with what is wrong or why it is empty.
+#[component]
+fn Entries(feed: Feed, show: Show) -> Element {
+    let (error, ready, expand) = ((feed.error)(), (feed.ready)(), (show.expand)());
+    let blocks = show.blocks(&feed.timeline.read());
+    rsx! {
+        if let Some(message)=error.clone() { p {class:"transcript-error",role:"alert","{message}"} }
+        if !ready && error.is_none() {p {class:"transcript-empty",role:"status","Loading transcript…"}}
+        if ready && blocks.is_empty() {p {class:"transcript-empty",role:"status","Waiting for agent activity. New output will appear here automatically."}}
+        ol {class:"transcript-timeline", "aria-label":"Agent activity",
+            for (block, result) in blocks {
+                li {key:"{block.sequence}",class:format!("trace-block trace-{:?}",block.kind).to_lowercase(), style:"--seat: var(--seat-{block.seat % 6})",
+                    time {"{clock(block.time)}"}
+                    div { class:"trace-content",
+                        if block.kind==Kind::Game {
+                            p { class:"trace-game-line", span {class:"trace-kind","Game"} "{block.text}" }
+                        } else {
+                            header {
+                                span {class:"trace-kind", if result.is_some() { "Tool call and result" } else { "{label(block.kind)}" }}
+                                span {class:"trace-agent", span { class:"seat-dot" } "P{block.seat+1} · {block.agent}"}
+                            }
+                            if block.kind == Kind::Call {
+                                div { class:"trace-call-body",
+                                    Body { kind: block.kind, text: block.text.clone(), expand }
+                                }
+                            } else {
+                                Body { kind: block.kind, text: block.text.clone(), expand }
+                            }
+                            if let Some(result) = result {
+                                div { class:"trace-result trace-paired",
+                                    span { class:"trace-kind", "Result" }
+                                    span { class:"trace-lines", " · {took(result.time.saturating_sub(block.time))}" }
+                                    Body { kind: result.kind, text: result.text.clone(), expand }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// The transcript beside the game's chat: a seat to follow and the timeline, and the
+/// whole transcript over the page on asking.
+#[component]
+pub fn AgentsPane(feed: Feed, show: Show, game: String) -> Element {
+    let mut full = use_signal(|| false);
+    let mut selected = show.seat;
+    let agents = agents(&feed.timeline.read());
+    use_follow(feed, show, SCROLL_OWN);
+    rsx! {
+        style { {CSS} }
+        div { class: "transcript-pane",
+            div { class: "transcript-pane-bar",
+                if agents.len() > 1 {
+                    select { "aria-label": "Seat",
+                        value: selected().map_or(String::new(), |s| s.to_string()),
+                        onchange: move |e| selected.set(e.value().parse().ok()),
+                        option { value: "", "All seats" }
+                        for (seat, name) in agents {
+                            option { key: "{seat}", value: "{seat}", "P{seat + 1} · {name}" }
+                        }
+                    }
+                }
+                button { class: "toggle", "data-action": "transcript-full", "aria-haspopup": "dialog",
+                    title: "The whole transcript, over the game",
+                    onclick: move |e| { e.stop_propagation(); full.set(true); },
+                    "Full screen"
+                }
+            }
+            div { class: "transcript-pane-scroll", "data-trace-scroll": "",
+                Entries { feed, show }
+            }
+        }
+        if full() {
+            dialog { class: "transcript-full", "data-trace-scroll": "", "aria-label": "Agent transcript",
+                onmounted: move |_| {
+                    #[cfg(all(feature = "web", target_arch = "wasm32"))]
+                    document::eval(&format!("document.querySelector('dialog.transcript-full')?.showModal(); {SCROLL_OWN}"));
+                },
+                onkeydown: move |e| { if e.key() == Key::Escape { e.prevent_default(); full.set(false); } },
+                onclick: move |e| e.stop_propagation(),
+                Full { feed, show, game,
+                    button { class: "copper", "data-action": "transcript-close", autofocus: true,
+                        onclick: move |_| full.set(false), "Close" }
+                }
+            }
+        }
+    }
+}
+
 #[component]
 fn Body(kind: Kind, text: String, expand: bool) -> Element {
     let (first, lines) = summary(&text);

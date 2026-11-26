@@ -9,7 +9,7 @@
 .transcript-side { flex: 1 1 260px; max-width: 330px; position: sticky; top: 1em; padding-top: .8em; }
 .transcript-main { flex: 999 1 560px; min-width: 0; margin-top: .8em; padding-bottom: .8em; }
 .transcript-seats { display: flex; flex-direction: column; gap: .5em; padding-top: .3em; }
-.transcript-seats button.toggle { justify-content: flex-start; text-align: left; width: 100%; }
+.transcript-seats button.toggle { display: flex; align-items: center; gap: .5em; justify-content: flex-start; text-align: left; width: 100%; }
 .seat-dot { display: inline-block; width: .65em; height: .65em; border-radius: 50%; flex: none; background: var(--seat, var(--muted)); }
 
 .transcript-switch-row { display: flex; align-items: center; gap: .8em; min-height: 2.8em; }
@@ -68,6 +68,35 @@
 .trace-game-line { white-space: pre-wrap; }
 .transcript-error { padding: .8em 1em; color: #f6dccb; background: rgba(124, 63, 34, .3); border: 1px solid #a0603a; }
 .transcript-empty { padding: 2em 0; color: var(--muted); }
+/* Beside the game's chat. */
+.transcript-pane { display: flex; flex-direction: column; gap: .4em; min-height: 0; }
+.transcript-pane-bar { display: flex; gap: .4em; align-items: center; justify-content: flex-end; flex: none; }
+.transcript-pane-bar select { flex: 1; min-width: 0; }
+.transcript-pane-scroll { overflow-y: auto; min-height: 3em; max-height: 28em; user-select: text; }
+.transcript-pane .trace-block { grid-template-columns: 1fr; gap: .15em; padding: .5em 0; }
+.transcript-pane .transcript-empty { padding: .6em 0; }
+
+/* Over the game, in full. */
+dialog.transcript-full {
+  box-sizing: border-box;
+  width: 100vw;
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 1em clamp(1em, 3vw, 2.5em);
+  overflow-y: auto;
+  border: 0;
+  color: var(--text);
+  background: var(--bg);
+  font: 1rem/1.45 var(--ui);
+  text-align: left;
+  text-shadow: none;
+  user-select: text;
+}
+dialog.transcript-full::backdrop { background: #000a; }
+dialog.transcript-full .agent-transcript { margin-top: 0; }
+dialog.transcript-full .transcript-heading > button { padding: .5em 1.6em; font-size: 1.05em; }
 @media (max-width: 600px) {
   .agent-transcript { margin-top: 0; }
   .transcript-heading h1 { font-size: 2em; }
