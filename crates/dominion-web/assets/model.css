@@ -66,3 +66,9 @@ dialog.model-controls {
 .model-pick > button { margin-inline-start: auto; }
 .model-pane select { min-width: 0; flex: 1; }
 .model-pane .game-chat-input { box-sizing: border-box; }
+
+/* The models' own seats, one tab each, when the dialog has more than one. */
+.model-seats { display: flex; flex-wrap: wrap; gap: .4rem; }
+.model-seats button { display: inline-flex; align-items: baseline; gap: .45rem; }
+.model-seats button small { color: var(--text-soft); font-size: .8rem; }
+.model-seats .model-unread { margin-inline-start: 0; }

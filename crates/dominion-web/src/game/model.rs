@@ -481,14 +481,33 @@ pub fn HeldNotice(#[props(default)] style: String) -> Element {
     }
 }
 
-/// Live instructions for a model's own seat, and the manual decisions of whoever may
-/// hold it (`take`: an admin, a dominion.games account's owner).
+/// A model's own seat that the viewer holds and that has a decision open.
+fn waiting(s: &ModelSeat) -> bool {
+    s.playing.as_ref().is_some_and(|p| p.decision.is_some())
+}
+
+/// Who plays a model's own seat, said shortly for the seat's tab and at length for its
+/// status line.
+fn seat_status(s: &ModelSeat) -> (&'static str, &'static str) {
+    if s.playing.is_some() {
+        ("You", "You are playing")
+    } else if s.controlled {
+        ("A person", "A person is playing")
+    } else {
+        ("Model", "Model is playing")
+    }
+}
+
+/// Live instructions for the models' own seats, and the manual decisions of whoever may
+/// hold them (`take`: an admin, a dominion.games account's owner). One seat is open at a
+/// time; after an answer it goes to a held seat waiting on a decision, if one is.
 #[component]
 pub fn ModelControls(take: bool) -> Element {
     let ctx = use_game();
     let models = ctx.models;
     let mut open = use_signal(|| false);
     let mut selected = use_signal(|| None::<u8>);
+    let mut follow = use_signal(|| true);
     let mut draft = use_signal(String::new);
     let mut notice = use_signal(|| None::<String>);
     let shown = (ctx.state.read().view.as_ref()).and_then(|v| v.seat);
@@ -500,9 +519,15 @@ pub fn ModelControls(take: bool) -> Element {
         .filter(|s| Some(s.seat) != pane)
         .cloned()
         .collect();
-    let current = available
-        .iter()
-        .find(|s| Some(s.seat) == selected())
+    let picked = available.iter().find(|s| Some(s.seat) == selected());
+    let current = picked
+        .filter(|s| waiting(s))
+        .or_else(|| {
+            (follow() || picked.is_none())
+                .then(|| available.iter().find(|s| waiting(s)))
+                .flatten()
+        })
+        .or(picked)
         .or_else(|| available.iter().find(|s| s.playing.is_some()))
         .or(available.first())
         .cloned();
@@ -512,19 +537,23 @@ pub fn ModelControls(take: bool) -> Element {
     let seat = current.seat;
     let yours = current.playing.is_some();
     let controlled = current.controlled;
-    let status = if yours {
-        "You are playing"
-    } else if controlled {
-        "A person is playing"
-    } else {
-        "Model is playing"
+    let status = seat_status(&current).1;
+    let held = available.iter().filter(|s| s.playing.is_some()).count();
+    let decisions = available.iter().filter(|s| waiting(s)).count();
+    let label = match held {
+        0 => "Model controls",
+        1 => "Play model seat",
+        _ => "Play model seats",
     };
+    let tabs = (available.len() > 1).then(|| available.clone());
     let error = (models.error)();
     rsx! {
         style { {CSS} }
-        button { class: if yours { "copper" } else { "toggle" }, "aria-haspopup": "dialog",
-            onclick: move |_| open.set(true),
-            if yours { "Play model seat" } else { "Model controls" }
+        button { class: if held > 0 { "copper" } else { "toggle" }, "aria-haspopup": "dialog",
+            title: if decisions > 0 { "{decisions} of your model seats waiting on a decision" },
+            onclick: move |_| { follow.set(true); open.set(true); },
+            "{label}"
+            if decisions > 0 { span { class: "model-unread", "data-waiting": "{decisions}", "{decisions}" } }
         }
         if open() {
             dialog {
@@ -539,15 +568,27 @@ pub fn ModelControls(take: bool) -> Element {
                     button { class: "model-close", "aria-label": "Close model controls",
                         onclick: move |_| open.set(false), "×" }
                 }
-                if available.len() > 1 {
-                    label { "Model seat"
-                        select {
-                            value: "{seat}", disabled: busy(),
-                            onchange: move |e| {
-                                selected.set(e.value().parse().ok());
-                                draft.set(String::new()); notice.set(None);
-                            },
-                            for s in available { option { value: "{s.seat}", "{s.name}" } }
+                if let Some(tabs) = tabs {
+                    div { class: "model-seats", role: "tablist", "aria-label": "Model seats",
+                        for s in tabs {
+                            button { key: "{s.seat}", role: "tab",
+                                class: if s.seat == seat { "toggle on" } else { "toggle" },
+                                "aria-selected": "{s.seat == seat}", "data-seat": "{s.seat}",
+                                disabled: busy(),
+                                onclick: {
+                                    let pick = s.seat;
+                                    move |_| {
+                                        if pick != seat { draft.set(String::new()); notice.set(None); }
+                                        selected.set(Some(pick));
+                                        follow.set(false);
+                                    }
+                                },
+                                span { "{s.name}" }
+                                small { "{seat_status(&s).0}" }
+                                if waiting(&s) {
+                                    span { class: "model-unread", title: "Waiting on your decision", "!" }
+                                }
+                            }
                         }
                     }
                 }
@@ -564,7 +605,7 @@ pub fn ModelControls(take: bool) -> Element {
                 textarea { id: "model-prompt", rows: 3, maxlength: 2000, value: "{draft}",
                     placeholder: "What should {current.name} consider?",
                     disabled: busy(),
-                    oninput: move |e| { selected.set(Some(seat)); draft.set(e.value()); notice.set(None); },
+                    oninput: move |e| { selected.set(Some(seat)); follow.set(false); draft.set(e.value()); notice.set(None); },
                 }
                 div { class: "model-send",
                     small { if controlled { "It answers in a note for whoever plays the seat." } else { "Included in its next game observation." } }
@@ -594,7 +635,11 @@ pub fn ModelControls(take: bool) -> Element {
                     }
                     if let Some(d) = playing.decision {
                         DecisionControls { key: "{seat}-{d.id}", decision: d, busy: busy(),
-                            on_answer: move |answer| act.call((seat, ModelAction::Answer { answer })) }
+                            on_answer: move |answer| {
+                                selected.set(Some(seat));
+                                follow.set(true);
+                                act.call((seat, ModelAction::Answer { answer }));
+                            } }
                     } else { p { role: "status", "Waiting for this seat’s next decision." } }
                 }
                 if take {
