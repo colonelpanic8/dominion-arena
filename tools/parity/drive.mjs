@@ -15,6 +15,7 @@
 //                 where there are any ("prefer" alone: the least again)
 //   "until P X+Y & Q Z: A, B"  turns of "turn A, B" until P (Alice or Bob) starts a
 //                 turn holding X and Y, while Q holds Z
+//   "resign P"    P (a player's name) resigns
 //   "turns" and "spree" stop early when the game ends
 // A step may also be a function of the driver.
 export class Driver {
@@ -76,6 +77,9 @@ export class Driver {
     if (typeof step === 'function') return step(this);
     const [verb, ...rest] = step.split(' ');
     const arg = rest.join(' ');
+    if (verb === 'resign') {
+      return this.arena.api('POST', `/games/${encodeURIComponent(this.game)}/resign`, {}, this.seats[arg]);
+    }
     const list = arg ? arg.split(',').map((s) => s.trim()).filter(Boolean) : [];
     const d = await this.deciding();
     if (!d && (verb === 'turns' || verb === 'spree')) return;

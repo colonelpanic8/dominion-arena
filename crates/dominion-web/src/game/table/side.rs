@@ -177,12 +177,23 @@ pub fn Log(
     }
 }
 
+/// A player's counter in words; dominion.games shows none of them on the table.
+fn counter_words(key: &str) -> &str {
+    match key {
+        "extraTurnsTaken" => "extra turns taken",
+        "skipTurns" => "turns to skip",
+        "turnsSkipped" => "turns skipped",
+        k => k,
+    }
+}
+
 /// How many entries the "more" panel holds.
 fn extra_count(b: &Board) -> usize {
     b.lasting.len()
         + b.extra_turns.len()
         + b.notes.len()
         + b.counters.len()
+        + b.players().map(|p| p.counters.len()).sum::<usize>()
         + b.uncertain.len()
         + b.you.as_ref().map_or(0, |y| y.uncertain.len())
         + usize::from(b.boons.is_some())
@@ -244,6 +255,14 @@ pub fn More(board: Rc<Board>) -> Element {
                     }
                     for (k, v) in b.counters.iter() {
                         li { key: "c{k}", "{k}: {v}" }
+                    }
+                    for p in b.players() {
+                        for (k, v) in p.counters.iter() {
+                            li { key: "p{p.seat}{k}",
+                                span { class: "dt-pc {seat_class(p.seat)}", "{p.name}" }
+                                " — {counter_words(k)}: {v}"
+                            }
+                        }
                     }
                     for (i, u) in b.uncertain.iter().chain(yours.iter()).enumerate() {
                         li { key: "u{i}",

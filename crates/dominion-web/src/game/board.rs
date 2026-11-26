@@ -704,8 +704,9 @@ fn player_badges(p: &PlayerView) -> Vec<Badge> {
             out.push(badge(kind, format!("{v} {label}"), Some(v as i32)));
         }
     };
-    n("coffers", "Coffers", t.coffers.into());
+    // dominion.games puts Villagers before Coffers beside a name.
     n("villagers", "Villager(s)", t.villagers.into());
+    n("coffers", "Coffers", t.coffers.into());
     n("favors", "Favor(s)", t.favors.into());
     n("debt", "Debt", t.debt.into());
     n("vp", "VP token(s)", t.vp_tokens.into());

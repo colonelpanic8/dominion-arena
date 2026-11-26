@@ -102,10 +102,20 @@ impl Ui {
     }
 
     pub fn mark(&self, sel: &Selection, spot: &Spot) -> Mark {
-        self.by_spot
-            .get(spot)
-            .map(|&t| self.mark_target(sel, t))
-            .unwrap_or_default()
+        if let Some(&t) = self.by_spot.get(spot) {
+            return self.mark_target(sel, t);
+        }
+        // dominion.games outlines the card an ability is on, in the hand or in play, as
+        // well as offering the ability's button.
+        if let Spot::Hand(card) | Spot::InPlay(card) = spot
+            && let Some(t) = (0..self.spots.len()).find(|&t| {
+                self.spots[t] == Spot::Ability
+                    && self.inter.targets[t].card.as_deref() == Some(card.as_str())
+            })
+        {
+            return self.mark_target(sel, t);
+        }
+        Mark::default()
     }
 
     /// The Ways a click on target `t` may play its card with, each on its own button.

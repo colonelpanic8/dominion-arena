@@ -37,6 +37,8 @@ For each scenario (`scenarios.mjs`), `run.mjs`:
 4. Opens our client as Alice at `/game/<id>`, then plays the scenario's `after` steps
    with both clients watching (their client shows a game's end only to a seat that saw
    it happen).
+   A scenario's `show` then clicks the same things in both clients (`windows.mjs`): a
+   card studied, a tab's window opened, cards picked for a decision.
 5. Once both pages stop changing, it screenshots each and reads off them every visible
    picture (by file name: both clients use dominion.games' images) and every visible run
    of text, with their boxes (`extract.mjs`).
@@ -91,5 +93,9 @@ Village)"). When their client looks wrong, fix the projection, not our client.
   differs from a game it watched being played: it lays out a snapshot's cards before
   reading their statuses, so a Duration from last turn stacks with a copy played this
   turn. Our table follows the live game there; don't chase those points.
-- One seat's view (Alice's) at one viewport per run.
-- Animations, hovering and windows (the study view, mats opened) aren't compared yet.
+- One seat's view (the first player's). A scenario may set its own `viewport` and
+  player `names`; the others use the run's.
+- Animations and hovering aren't compared. Their client 2.3.7 opens nothing from a
+  deck, so our deck composition window has nothing to be compared with, and its score
+  page after Ok needs score parts and table state the transport doesn't send yet.
+- Their client can't watch as a spectator: the transport has no spectator membership.

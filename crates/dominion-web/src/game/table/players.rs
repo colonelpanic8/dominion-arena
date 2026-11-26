@@ -104,9 +104,6 @@ fn PlayerBar(player: PlayerEntry, at: Rect, you: bool, active: bool, cubes: usiz
                 for c in p.boons.iter() {
                     span { key: "h{c}", class: "dt-bar-held", CardName { name: c.clone() } }
                 }
-                for (k, v) in p.counters.iter() {
-                    span { key: "c{k}", class: "dt-bar-held", "{k} {v}" }
-                }
                 match (&p.rating, &account) {
                     (Some(rating), _) => rsx! {
                         RatingChip { rating: rating.clone(), seat, away, kind: account.as_ref().map(|a| a.kind_tag()).unwrap_or_default() }
