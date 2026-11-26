@@ -257,23 +257,11 @@ fn generic_prompt(d: &AgentDecision, cards: &CardDb) -> String {
         }
         (_, "reaction") => "Do you want to react?".into(),
         (_, "trigger") => {
-            let triggers: Vec<&str> = d
-                .options
-                .iter()
-                .filter(|o| o.action == "trigger")
-                .filter_map(|o| o.card.as_deref())
-                .collect();
+            // dominion.games asks every optional ability as a reaction, Reaction or not
+            // (Alchemist's at the start of Clean-up).
             let optional = may || d.options.iter().any(|o| o.action == "no");
-            let reacting = !triggers.is_empty()
-                && triggers.iter().all(|c| {
-                    cards
-                        .get(c)
-                        .is_some_and(|c| c.types.iter().any(|t| t == "Reaction"))
-                });
-            if reacting && optional {
+            if optional {
                 "Do you want to react?".into()
-            } else if optional {
-                "You may resolve an effect".into()
             } else {
                 "Resolve an effect".into()
             }

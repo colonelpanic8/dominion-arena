@@ -362,7 +362,6 @@ pub fn Buttons(
 ) -> Element {
     let ctx = use_table();
     let assets = use_assets();
-    let cards = use_cards();
     let mut number = use_signal(|| 0usize);
     let Some(u) = ui else {
         return rsx! {};
@@ -475,6 +474,8 @@ pub fn Buttons(
         });
     }
     let (bw, bh) = g.button;
+    // An ability's button is taller: its card's art under a strip with its name.
+    let ah = 8.75 * g.vh;
     let width = |b: &Btn| {
         if b.icon.is_some() || b.count.is_some() {
             bw * 4.0 / 3.0
@@ -506,7 +507,7 @@ pub fn Buttons(
         rows.clear();
         for (i, b) in row.iter().enumerate() {
             let w = width(b);
-            let y = g.side_top + (side.len() + i) as f64 * (bh + g.vh);
+            let y = g.side_top + side.len() as f64 * (ah + g.vh) + i as f64 * (bh + g.vh);
             placed.push((i, Rect::new(g.side_right - w, y, w, bh)));
         }
     }
@@ -652,9 +653,12 @@ pub fn Buttons(
             {
                 let t = &u.inter.targets[i];
                 let card = t.card.clone().unwrap_or_default();
-                let r = Rect::new(g.side_right - side_w, g.side_top + k as f64 * (bh + g.vh), side_w, bh);
+                let r = Rect::new(g.side_right - side_w, g.side_top + k as f64 * (ah + g.vh), side_w, ah);
                 let n = t.options.len();
-                let art = cards.get(&card).is_some();
+                let art = assets
+                    .card(&card)
+                    .and_then(|f| f.art.as_deref())
+                    .map(crate::assets::url);
                 rsx! {
                     button {
                         key: "s{i}",
@@ -664,12 +668,10 @@ pub fn Buttons(
                         "data-options": "{n}",
                         title: "{t.label}",
                         onclick: move |e| { e.stop_propagation(); ctx.act(i); },
-                        if art {
-                            div { class: "dt-ability-art",
-                                TableCard { name: card.clone(), size: CardSize::Mini }
-                            }
+                        if let Some(src) = art {
+                            div { class: "dt-ability-art", style: "background-image:url('{src}');" }
                         }
-                        span { class: "dt-btn-label", "{card}" }
+                        span { class: "dt-ability-name", "{card}" }
                         if n > 1 {
                             span { class: "dt-btn-count", "{n}" }
                         }
