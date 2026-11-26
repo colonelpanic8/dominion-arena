@@ -336,6 +336,7 @@ pub(crate) fn build_with(
         clock: 0,
         last_put: Default::default(),
         emptied_depth: 0,
+        quiet_turns: 0,
         ext: Ext::default(),
         coins_as_cards: None,
         stack: vec![],

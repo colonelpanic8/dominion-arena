@@ -867,6 +867,7 @@ pub fn render(v: &AgentView) -> String {
             Some("piles-empty") => " (Supply piles ran out)",
             Some("turn-limit") => " (the turn limit was reached)",
             Some("resigned") => " (a player resigned)",
+            Some("stalled") => " (no one could do anything any more)",
             _ => "",
         };
         out.push(format!("RESULT{reason}: {}", players.join(", ")));

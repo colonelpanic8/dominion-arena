@@ -1612,6 +1612,7 @@ fn reason_of(reason: EndReason) -> &'static str {
         EndReason::PilesEmpty => "piles",
         EndReason::TurnLimit => "turn-limit",
         EndReason::Resigned => "resigned",
+        EndReason::Stalled => "stalled",
     }
 }
 

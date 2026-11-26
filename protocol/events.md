@@ -320,7 +320,7 @@ different cards chooses which first. The stream records the outcome (`turn`,
 ### The game ending
 
 - `ending` is set when the end condition is met: `reason` (`provinces`, `colonies`,
-  `piles` or `turn-limit`) and `finalRound`, the seats still to take a turn of the round
+  `piles`, `turn-limit` or `stalled`) and `finalRound`, the seats still to take a turn of the round
   after the game's end (Fleet), in order. Each turn of that round, taken or skipped,
   removes its seat from the front.
 - `ended` is set when the game is over: `reason` (as above, or `resigned`) and `result`,
@@ -713,8 +713,11 @@ is to be played (Fleet).
 
 **Fold:** `ending` becomes `{reason, finalRound}`.
 
-Written between turns, after the turn that met it. A `turn-limit` end never has a final
-round. Extra turns still go before the turns of the final round.
+Written between turns, after the turn that met it. A `turn-limit` or `stalled` end never
+has a final round. `stalled` is no rule of the game: the engine ends a game once ten rounds
+of turns in a row (ten turns per seat) have gone by without any seat being asked anything,
+as happens when every deck has been trashed away and nothing is left to buy, which the
+rules would let go on forever. It is scored as it stands. Extra turns still go before the turns of the final round.
 
 #### `game-end`
 

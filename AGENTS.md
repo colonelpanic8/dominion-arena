@@ -391,7 +391,10 @@ them.
   `ExtraTurn::lasting`, which ends when that turn starts, is skipped or is lost. Once
   the game has ended, extra turns happen only before a turn of Fleet's round. `Player::skip_turns` skips the next turns
   a player would take (Lich), Fleet's included; skipped regular turns count for the
-  tiebreaker.
+  tiebreaker. A game in which `STALL_ROUNDS` rounds of turns in a row pass with no
+  player asked anything (`Game::quiet_turns`, reset when `run` stops at a decision) ends
+  as `EndReason::Stalled`, through `game_over_reason` like the turn limit and without
+  a final round: the rules would let it go on forever, and `respond` must return.
 - **Playing a card** (`Frame::play`, the only way): move it into play, `Play` window
   (triggers may set `g.plays.last_mut()`'s `replaced` / `blocked`: they are the card's
   player's, and the one resolved last applies), for an Attack one window holding an

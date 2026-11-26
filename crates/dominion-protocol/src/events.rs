@@ -640,7 +640,7 @@ pub struct ExtraTurnQueued {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Ending {
-    /// `provinces`, `colonies`, `piles` or `turn-limit`.
+    /// `provinces`, `colonies`, `piles`, `turn-limit` or `stalled`.
     pub reason: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub final_round: Vec<u8>,
@@ -1160,7 +1160,7 @@ pub struct SeatResult {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GameEnd {
-    /// `provinces`, `colonies`, `piles`, `turn-limit` or `resigned`.
+    /// `provinces`, `colonies`, `piles`, `turn-limit`, `stalled` or `resigned`.
     pub reason: String,
     pub result: Vec<SeatResult>,
 }

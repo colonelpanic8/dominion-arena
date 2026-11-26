@@ -532,6 +532,7 @@ pub fn end_reason(code: &str) -> String {
         "piles-empty" => "Supply piles ran out.".into(),
         "turn-limit" => "The turn limit was reached.".into(),
         "resigned" => "A player resigned.".into(),
+        "stalled" => "No one could do anything any more.".into(),
         other => other.into(),
     }
 }

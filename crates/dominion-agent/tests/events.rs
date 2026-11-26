@@ -359,6 +359,7 @@ fn engine_table(game: &Game) -> Table {
             EndReason::PilesEmpty => "piles",
             EndReason::TurnLimit => "turn-limit",
             EndReason::Resigned => "resigned",
+            EndReason::Stalled => "stalled",
         }
         .into(),
         final_round: game.final_round().iter().map(|p| p.0).collect(),
@@ -1842,6 +1843,42 @@ fn a_stash_placed_before_a_reshuffle_keeps_its_place() {
             .count();
     }
     assert!(among > 0, "no Stash lay among cards shuffled again");
+}
+
+/// Buys Donate and trashes every card with it: in Debt with no cards, the player is never
+/// asked anything again.
+fn donate_everything(game: &Game, rng: &mut ChaCha8Rng) -> Response {
+    let d = game.pending().expect("a decision");
+    match &d.kind {
+        DecisionKind::Turn { moves, .. } if moves.contains(&Move::BuyLandscape(Card::Donate)) => {
+            Response::Move(Move::BuyLandscape(Card::Donate))
+        }
+        DecisionKind::Cards { candidates, .. } if d.source == Some(Card::Donate) => {
+            Response::Cards(candidates.clone())
+        }
+        _ => eager_response(game, rng),
+    }
+}
+
+/// A game nobody can be asked anything in any more ends `stalled`, an ending like any
+/// other: in the stream, the fold and the replay.
+#[test]
+fn a_stalled_game_ends_in_the_stream() {
+    use Card::*;
+    let kingdom = vec![
+        Village, Smithy, Moat, Cellar, Market, Laboratory, Festival, Mine, Militia, Chapel,
+    ];
+    let mut config = GameConfig::new(2, kingdom, 1);
+    config.landscapes = vec![Donate];
+    let events = follow(config, 1, donate_everything);
+    let reasons: Vec<&str> = (events.iter())
+        .filter_map(|e| match &e.what {
+            What::GameEnding(e) => Some(e.reason.as_str()),
+            What::GameEnd(e) => Some(e.reason.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(reasons, ["stalled", "stalled"]);
 }
 
 /// Replay fails cleanly on a stream no game wrote, reports differences in stream order, and

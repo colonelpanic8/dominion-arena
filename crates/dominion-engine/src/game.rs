@@ -507,7 +507,16 @@ pub enum EndReason {
     TurnLimit,
     /// A player resigned ([`Game::resign`]).
     Resigned,
+    /// [`STALL_ROUNDS`] rounds of turns passed with no player asked anything: nobody can
+    /// affect the game any more (every deck trashed away, nothing left to buy), and the
+    /// rules would let it go on forever.
+    Stalled,
 }
+
+/// How many rounds of turns in a row without a decision end the game as
+/// [`EndReason::Stalled`]. No real game goes this long with every turn forced: a player
+/// who can buy anything, play anything or spend a token is asked.
+pub const STALL_ROUNDS: u32 = 10;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Outcome {
@@ -594,6 +603,9 @@ pub struct Game {
     /// [`Game::answers_emptying`]).
     #[serde(default)]
     pub(crate) emptied_depth: usize,
+    /// Turns started since a player was last asked anything (see [`EndReason::Stalled`]).
+    #[serde(default)]
+    pub(crate) quiet_turns: u32,
     pub(crate) ext: Ext,
     /// While a step of an ability runs whose +$ its player gets as +Cards instead (Way of
     /// the Chameleon): that player, and the +$ the step has given so far.
@@ -1307,6 +1319,7 @@ impl Game {
             clock: 0,
             last_put: Default::default(),
             emptied_depth: 0,
+            quiet_turns: 0,
             ext: self.ext.clone(),
             coins_as_cards: None,
             stack: vec![],
@@ -1411,6 +1424,7 @@ impl Game {
                         self.record_answer(&decision, &response);
                         input = Input::Response(response);
                     } else {
+                        self.quiet_turns = 0;
                         self.sync_log(None);
                         self.forget_hidden_shows();
                         self.pending = Some(decision);
@@ -1950,6 +1964,9 @@ impl Game {
         let turns: u32 = self.players.iter().map(|p| p.turns_taken).sum();
         if self.config.turn_limit.is_some_and(|limit| turns >= limit) {
             return Some(EndReason::TurnLimit);
+        }
+        if self.quiet_turns >= STALL_ROUNDS * self.players.len() as u32 {
+            return Some(EndReason::Stalled);
         }
         None
     }

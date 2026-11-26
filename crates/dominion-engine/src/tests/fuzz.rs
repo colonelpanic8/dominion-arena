@@ -2825,6 +2825,7 @@ fn check_outcome(g: &Game, flags: &mut Flags) {
         .is_some_and(|limit| g.players.iter().map(|p| p.turns_taken).sum::<u32>() >= limit);
     let justified = match o.reason {
         EndReason::TurnLimit => limit_hit,
+        EndReason::Stalled => g.quiet_turns >= crate::STALL_ROUNDS * n as u32,
         _ => game_should_be_over(g),
     };
     // Fleet's extra round comes after the end, and can refill a pile.

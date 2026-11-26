@@ -428,3 +428,52 @@ fn an_extra_turn_fails_only_when_it_is_up_next() {
     to_next_turn(&mut g);
     assert_eq!((g.turn().player, g.turn().extra), (P1, Some(Card::Voyage)));
 }
+
+/// Both players with no cards at all and nothing left at $0: no one is ever asked
+/// anything again.
+fn stuck(kingdom: &[Card]) -> Game {
+    let mut g = game(2, kingdom, &[]);
+    for p in [P0, P1] {
+        hand(&mut g, p, &[]);
+        deck(&mut g, p, &[]);
+        discard(&mut g, p, &[]);
+    }
+    for card in [Card::Copper, Card::Curse] {
+        leave_one(&mut g, card);
+        let pile = g.supply_pile(card).unwrap();
+        let last = g.pile(pile).cards[0];
+        g.move_card(last, Zone::Trash, Pos::Top);
+    }
+    g
+}
+
+#[test]
+fn a_game_where_nobody_can_be_asked_anything_ends_stalled() {
+    let g = stuck(&[Card::Village, Card::Smithy]);
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut g = g;
+        g.start();
+        let _ = tx.send(g);
+    });
+    let g = rx
+        .recv_timeout(std::time::Duration::from_secs(60))
+        .expect("the game never stops running");
+    let o = g.outcome().expect("the game is over");
+    assert_eq!(o.reason, EndReason::Stalled);
+    assert_eq!(o.winners, vec![P0, P1]);
+    assert_eq!(turn_starts(&g), (STALL_ROUNDS * 2) as usize);
+    assert!(g.pending().is_none());
+}
+
+#[test]
+fn a_decision_now_and_then_keeps_the_game_going() {
+    let mut g = stuck(&[Card::Village, Card::Smithy]);
+    deck(&mut g, P0, &[Card::Village]);
+    g.start();
+    for _ in 0..(STALL_ROUNDS * 4) {
+        assert_eq!(g.pending().map(|d| d.player), Some(P0));
+        end_phase(&mut g);
+    }
+    assert!(g.outcome().is_none());
+}

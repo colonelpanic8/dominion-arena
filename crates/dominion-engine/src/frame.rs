@@ -1034,7 +1034,7 @@ fn resume_game(g: &mut Game, next: &mut PlayerId, pc: &mut u8, input: Input) -> 
                 && let Some(reason) = g.game_over_reason()
             {
                 g.ending = Some(reason);
-                if reason != EndReason::TurnLimit {
+                if !matches!(reason, EndReason::TurnLimit | EndReason::Stalled) {
                     let order = g.players_from(g.left_of(g.turn.player));
                     g.final_round = order
                         .into_iter()
@@ -1112,6 +1112,7 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
     match pc {
         0 => {
             g.set_phase(Phase::Start);
+            g.quiet_turns += 1;
             let pl = &mut g.players[p.index()];
             pl.turns_taken += 1;
             if g.turn.extra.is_some() {

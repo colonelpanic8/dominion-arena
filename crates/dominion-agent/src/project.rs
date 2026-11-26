@@ -408,6 +408,7 @@ fn game_info(game: &Game, cx: &Context<'_>) -> GameInfo {
                     EndReason::PilesEmpty => "piles-empty",
                     EndReason::TurnLimit => "turn-limit",
                     EndReason::Resigned => "resigned",
+                    EndReason::Stalled => "stalled",
                 }
                 .into(),
             ),
