@@ -96,6 +96,7 @@ Village)"). When their client looks wrong, fix the projection, not our client.
 - One seat's view (the first player's). A scenario may set its own `viewport` and
   player `names`; the others use the run's.
 - Animations and hovering aren't compared. Their client 2.3.7 opens nothing from a
-  deck, so our deck composition window has nothing to be compared with, and its score
-  page after Ok needs score parts and table state the transport doesn't send yet.
+  deck, so our deck composition window has nothing to be compared with.
+- A score page (after the end notice's Ok, `{ button: 'Ok' }`) is compared without its
+  chat: their side bar's chat and Copy Chat have no counterpart in ours.
 - Their client can't watch as a spectator: the transport has no spectator membership.

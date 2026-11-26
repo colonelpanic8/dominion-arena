@@ -560,11 +560,14 @@ impl SetRules for Rules {
         (card == Card::DistantLands).then_some(0)
     }
 
-    fn bonus_vp(g: &Game, p: PlayerId) -> i32 {
-        4 * tavern(g, p)
+    fn bonus_vp(g: &Game, p: PlayerId, out: &mut Vec<(Card, i32)>) {
+        let on_tavern = tavern(g, p)
             .iter()
             .filter(|&&c| g.card(c) == Card::DistantLands)
-            .count() as i32
+            .count() as i32;
+        if on_tavern > 0 {
+            out.push((Card::DistantLands, 4 * on_tavern));
+        }
     }
 
     fn can_buy(g: &Game, p: PlayerId, card: Card) -> bool {

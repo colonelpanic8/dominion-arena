@@ -572,11 +572,19 @@ fn terminal_results_keep_authoritative_ties_turn_tiebreaks_and_resignation() {
             resigned: vec![PlayerId(0)],
         },
     ] {
-        let expected = result(&outcome, None, &ids(), &piles).unwrap();
         let mut state = serde_json::to_value(&game).unwrap();
         state["outcome"] = serde_json::to_value(&outcome).unwrap();
         state["pending"] = Value::Null;
         let finished: Game = serde_json::from_value(state).unwrap();
+        let expected = result(
+            &outcome,
+            None,
+            &ids(),
+            &piles,
+            &finished.view(PlayerId(0)),
+            &catalog,
+        )
+        .unwrap();
         let update = update(&finished, 0, &catalog, 1);
         assert!(update.question.is_none());
         assert_eq!(update.finished.as_ref().unwrap().players, expected.players);
@@ -736,7 +744,7 @@ fn disclosed_cards_become_anonymous_again_after_cleanup_and_shuffle() {
 }
 
 #[test]
-fn finished_attach_and_reconnect_preserve_final_facts_without_deck_breakdowns() {
+fn finished_attach_and_reconnect_preserve_final_facts_and_score_breakdowns() {
     let catalog = catalog();
     let mut game = Game::new(config()).unwrap();
     game.resign(PlayerId(1));
@@ -751,14 +759,21 @@ fn finished_attach_and_reconnect_preserve_final_facts_without_deck_breakdowns() 
     assert!(!after.game.running);
     assert_eq!(before.game.result, after.game.result);
     assert!(after.decision.is_none());
-    assert!(
-        replacement
-            .finished
-            .unwrap()
-            .players
-            .iter()
-            .all(|p| p.card_names.is_empty() && p.score.parts.is_empty())
-    );
+    let estate = catalog.card(Card::Estate).unwrap();
+    let copper = catalog.card(Card::Copper).unwrap();
+    for p in replacement.finished.unwrap().players {
+        let parts: Vec<_> = (p.score.parts.iter())
+            .map(|s| (s.card_name, s.points, s.frequency))
+            .collect();
+        assert_eq!(parts, [(estate, 3, 3)]);
+        let mut cards: Vec<_> = (p.card_names.iter())
+            .map(|c| (c.card_name, c.frequency))
+            .collect();
+        cards.sort();
+        let mut expected = vec![(copper, 7), (estate, 3)];
+        expected.sort();
+        assert_eq!(cards, expected);
+    }
     assert_eq!(initial.table.players.len(), initial.table.ready.len());
     assert!(
         initial.table.spectators.is_empty()

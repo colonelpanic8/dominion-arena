@@ -3,6 +3,7 @@
 // drive.mjs), then any steps played once both clients are watching (`after`). Steps can
 // only play cards whose questions the dominion.games transport maps
 // (`GET /api/official/coverage`); other cards are shown in an opening position.
+import { OFFICIAL_TRANSPORT } from './scenarios/official-transport.mjs';
 const bigHand = (d) => d.name === 'Alice' && d.view.you.hand.count >= 10;
 // Kingdoms of the decision scenarios (the block at the end of the list).
 const BASE = ['Harbinger', 'Library', 'Militia', 'Throne Room', 'Vassal', 'Bandit', 'Bureaucrat', 'Moneylender', 'Poacher', 'Artisan'];
@@ -1205,6 +1206,7 @@ export const SCENARIOS = [
     },
     steps: ['turns 6 Poet, Rustic Village, Silver', downToOne('Alice', 'Estate'), 'act'],
   },
+  ...OFFICIAL_TRANSPORT,
 ];
 
 // Plays until one `card` is left and Alice, in her Buy phase with her Treasures played,

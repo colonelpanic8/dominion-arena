@@ -82,10 +82,9 @@ pub(crate) trait SetRules {
         None
     }
 
-    /// VP `p` scores from things other than cards (Landmarks, ...).
-    fn bonus_vp(g: &Game, p: PlayerId) -> i32 {
-        0
-    }
+    /// VP `p` scores beyond their cards' own worth, each with what scores it: a Landmark,
+    /// a State, an Ally, or a card scoring for where it lies (Distant Lands).
+    fn bonus_vp(g: &Game, p: PlayerId, out: &mut Vec<(Card, i32)>) {}
 
     /// Adds the public state this set keeps outside the generic structures (Young Witch's
     /// Bane pile, Druid's Boons, ...), for agents.
@@ -262,8 +261,10 @@ macro_rules! sets {
             }
         }
 
-        pub(crate) fn bonus_vp(g: &Game, p: PlayerId) -> i32 {
-            0 $(+ <$module::Rules as SetRules>::bonus_vp(g, p))*
+        pub(crate) fn bonus_vp(g: &Game, p: PlayerId) -> Vec<(Card, i32)> {
+            let mut out = vec![];
+            $(<$module::Rules as SetRules>::bonus_vp(g, p, &mut out);)*
+            out
         }
 
         pub(crate) fn notes(g: &Game) -> Vec<crate::Note> {

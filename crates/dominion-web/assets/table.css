@@ -646,6 +646,8 @@ button.dt-bar-rating:hover { border-color: #f0cf7a; background: rgba(240, 207, 1
   z-index: 26000;
 }
 .dt-ended p { margin: 0; }
+/* The score page stands in for the table, as dominion.games' replaces its game page. */
+.dt-root:has(> .lb-score-page) > :not(.lb-score-page) { visibility: hidden; }
 .dt-ok { display: inline-flex; align-items: center; box-sizing: border-box; height: calc(5 * var(--vh)); margin-top: calc(1.5 * var(--vh)); background: rgba(0, 0, 0, 0.6); color: #fff; border: 2px solid #fff; font-family: var(--ui); font-weight: 700; font-size: calc(3 * var(--vh)); padding: calc(0.7 * var(--vh)); cursor: pointer; }
 .dt-score {
   position: absolute;

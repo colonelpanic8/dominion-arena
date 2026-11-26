@@ -36,6 +36,17 @@ impl WireCatalog {
                 )));
             }
         }
+        if result
+            .catalog
+            .cards
+            .get(BACK as usize)
+            .map(|c| c.key.as_str())
+            != Some("BACK")
+        {
+            return Err(ProjectionError::MissingSymbol(
+                "2.3.7 CardNames.BACK".into(),
+            ));
+        }
         for (table, name, expected) in [
             ("TimerPresetOptions", "OFF", TIMER_OFF),
             ("ResignationTypes", "MANUAL", MANUAL_RESIGNATION),
@@ -186,7 +197,14 @@ impl WireCatalog {
     }
 }
 
+/// The card back: on a score page, the VP tokens' line.
+pub(crate) const BACK: i32 = 0;
+
 pub(super) const REQUIRED_SYMBOLS: &[(&str, &[&str])] = &[
+    (
+        "LogEntryNames",
+        &["EXPLAIN_POINTS_DUH", "EXPLAIN_POINTS_VP_TOKENS"],
+    ),
     (
         "QuestionTypes",
         &["PLAY", "BUY", "DISCARD", "TRASH", "GAIN", "COMPLEX_OR"],

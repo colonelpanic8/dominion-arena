@@ -9,6 +9,15 @@ use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, VecDeque};
 
+/// One source of a player's VP: `count` copies of a card they own, worth `vp` together, or
+/// (with no copies) something else that scores for them, such as a Landmark or a State.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct ScorePart {
+    pub card: Card,
+    pub count: u32,
+    pub vp: i32,
+}
+
 /// A player mat that holds cards.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Mat {
@@ -1343,15 +1352,43 @@ impl Game {
     }
 
     fn score_as_is(&self, p: PlayerId) -> i32 {
-        let player = &self.players[p.index()];
-        let cards: i32 = player
-            .owned()
-            .map(|c| {
-                let card = self.card(c);
-                cards::vp(self, p, card).unwrap_or(card.def().vp as i32)
-            })
-            .sum();
-        cards + player.vp_tokens + cards::bonus_vp(self, p)
+        let parts: i32 = self.score_parts_as_is(p).iter().map(|s| s.vp).sum();
+        parts + self.players[p.index()].vp_tokens
+    }
+
+    /// Where `p`'s VP come from if the game ended now (as [`Game::score`] reckons it),
+    /// VP tokens aside: each card name they own that scores or is a Victory card or Curse,
+    /// and whatever else scores for them (a Landmark, a State, ...).
+    pub fn score_parts(&self, p: PlayerId) -> Vec<ScorePart> {
+        let ended = self.turn_player().is_none()
+            && !self.lasting.iter().any(|l| l.until == Until::EndOfTurn);
+        if ended {
+            self.score_parts_as_is(p)
+        } else {
+            self.after_turn().score_parts_as_is(p)
+        }
+    }
+
+    fn score_parts_as_is(&self, p: PlayerId) -> Vec<ScorePart> {
+        let mut parts: Vec<ScorePart> = vec![];
+        for c in self.players[p.index()].owned() {
+            let card = self.card(c);
+            let vp = cards::vp(self, p, card).unwrap_or(card.def().vp as i32);
+            if let Some(part) = parts.iter_mut().find(|s| s.card == card) {
+                part.count += 1;
+                part.vp += vp;
+            } else if vp != 0 || self.is(c, Types::VICTORY | Types::CURSE) {
+                parts.push(ScorePart { card, count: 1, vp });
+            }
+        }
+        for (card, vp) in cards::bonus_vp(self, p) {
+            match parts.iter_mut().find(|s| s.card == card) {
+                Some(part) => part.vp += vp,
+                None if vp != 0 => parts.push(ScorePart { card, count: 0, vp }),
+                None => {}
+            }
+        }
+        parts
     }
 
     // ---- Driving the game ----

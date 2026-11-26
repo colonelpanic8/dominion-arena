@@ -2009,7 +2009,15 @@ fn landmark_score(landmark: Card, kingdom: &[Card], mine: &[Card], theirs: &[Car
         hand(&mut g, p, &[]);
         deck(&mut g, p, cards);
     }
-    crate::cards::bonus_vp(&g, P0)
+    landmark_parts(&g, landmark)
+}
+
+/// What `landmark` scores for P0, as their score lists it.
+fn landmark_parts(g: &Game, landmark: Card) -> i32 {
+    let parts = g.score_parts(P0);
+    let part = parts.iter().find(|s| s.card == landmark);
+    assert!(part.is_none_or(|s| s.count == 0 && s.vp != 0));
+    part.map_or(0, |s| s.vp)
 }
 
 #[test]
@@ -2094,7 +2102,7 @@ fn obelisk_counts_every_card_of_its_pile_including_both_halves_of_a_split_pile()
     assert_eq!(g.obelisk_pile(), g.pile_of(Card::Catapult));
     hand(&mut g, P0, &[]);
     deck(&mut g, P0, &[Card::Catapult, Card::Rocks, Card::Copper]);
-    assert_eq!(crate::cards::bonus_vp(&g, P0), 4);
+    assert_eq!(landmark_parts(&g, Card::Obelisk), 4);
 }
 
 #[test]
@@ -2117,7 +2125,7 @@ fn tower_counts_non_victory_cards_from_empty_supply_piles() {
     strip(&mut g, Card::Estate, 8);
     strip(&mut g, Card::Catapult, 5);
     // Catapult / Rocks still has its Rocks: not empty.
-    assert_eq!(crate::cards::bonus_vp(&g, P0), 3);
+    assert_eq!(landmark_parts(&g, Card::Tower), 3);
 }
 
 // ---- Rulings and interactions ----

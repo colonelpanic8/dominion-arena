@@ -450,6 +450,9 @@ fn distant_lands_is_worth_four_only_on_the_tavern_mat() {
     assert_eq!(tavern_kinds(&g, P0), [Card::DistantLands]);
     assert_eq!(g.score(P0), before + 4);
     assert!(Card::DistantLands.is(Types::VICTORY));
+    let parts = g.score_parts(P0);
+    let part = parts.iter().find(|s| s.card == Card::DistantLands).unwrap();
+    assert_eq!((part.count, part.vp), (2, 4));
 }
 
 #[test]

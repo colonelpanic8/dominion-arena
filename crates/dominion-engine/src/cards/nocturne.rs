@@ -408,16 +408,14 @@ impl SetRules for Rules {
         (card == Card::Pasture).then(|| g.count_owned(p, Card::Estate) as i32)
     }
 
-    fn bonus_vp(g: &Game, p: PlayerId) -> i32 {
-        g.player(p)
-            .states
-            .iter()
-            .map(|s| match s {
-                Card::Miserable => -2,
-                Card::TwiceMiserable => -4,
-                _ => 0,
-            })
-            .sum()
+    fn bonus_vp(g: &Game, p: PlayerId, out: &mut Vec<(Card, i32)>) {
+        for &s in &g.player(p).states {
+            match s {
+                Card::Miserable => out.push((s, -2)),
+                Card::TwiceMiserable => out.push((s, -4)),
+                _ => {}
+            }
+        }
     }
 
     fn can_buy(g: &Game, p: PlayerId, card: Card) -> bool {

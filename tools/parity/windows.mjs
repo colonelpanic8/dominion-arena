@@ -6,6 +6,7 @@
 //                             of the largest cards: the hand's)
 //   { tab: 'Trash' }          click a tab on the table's edge (trash, a mat)
 //   { at: '.dt-selector' }    click what is at our element's place, in both clients
+//   { button: 'Ok' }          click the visible button reading this (the game's end notice)
 export async function show(ours, theirs, actions) {
   for (const a of actions) {
     const pages = [
@@ -15,6 +16,8 @@ export async function show(ours, theirs, actions) {
     if (a.study || a.click) {
       const button = a.study ? 'right' : 'left';
       for (const [page, side] of pages) await card(page, side, a.study ?? a.click, a.nth ?? 0, button, a.hand);
+    } else if (a.button) {
+      for (const [page, side] of pages) await button(page, side, a.button);
     } else if (a.tab || a.at) {
       // Found on our page before either is clicked: a click can take it away.
       const p = await place(ours, a.tab ? `.dt-tab[data-tab="${a.tab}"]` : a.at);
@@ -25,6 +28,21 @@ export async function show(ours, theirs, actions) {
     } else throw new Error(`unknown show action ${JSON.stringify(a)}`);
     await ours.waitForTimeout(400);
   }
+}
+
+async function button(page, side, text) {
+  for (let i = 0; i < 50; i++) {
+    const clicked = await page.evaluate((text) => {
+      const el = [...document.querySelectorAll('button')].find(
+        (e) => e.textContent.trim() === text && e.checkVisibility({ opacityProperty: true, visibilityProperty: true }),
+      );
+      el?.click();
+      return !!el;
+    }, text);
+    if (clicked) return;
+    await page.waitForTimeout(200);
+  }
+  throw new Error(`show: no button ${text} on ${side}`);
 }
 
 /// Where our page has `selector`, as fractions of the viewport.

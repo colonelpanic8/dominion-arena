@@ -777,6 +777,12 @@ impl Session {
                     None => Err(arena::Error::Forbidden("channel unavailable".into())),
                 }
             }
+            // A player's dominion.games profile (the score page asks for each player's):
+            // Arena keeps none, so there is nothing to send.
+            LifecycleCommand::Unsupported { opcode: 57 } => Ok(()),
+            LifecycleCommand::Unsupported { opcode } => Err(arena::Error::BadRequest(format!(
+                "official operation {opcode} is not implemented"
+            ))),
             _ => Err(arena::Error::BadRequest(
                 "official operation is not implemented".into(),
             )),

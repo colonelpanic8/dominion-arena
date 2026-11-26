@@ -817,7 +817,7 @@ fn build(
     let table = context.table_details.clone();
     let finished = observation
         .outcome
-        .map(|outcome| result(outcome, observation.ended, ids, &piles))
+        .map(|outcome| result(outcome, observation.ended, ids, &piles, view, catalog))
         .transpose()?;
     let timers = match &observation.clock {
         Some((_, clock)) => timers(clock, ids)?,
@@ -858,6 +858,8 @@ fn result(
     ended: Option<&str>,
     ids: &WireIdentity,
     piles: &[(i32, dominion_engine::PileView<'_>)],
+    view: &View<'_>,
+    catalog: &WireCatalog,
 ) -> Result<model::GameResult, ProjectionError> {
     let player_count = ids.player_ids.len();
     if outcome.scores.len() != player_count
@@ -917,9 +919,9 @@ fn result(
             score: model::Score {
                 total_points: outcome.scores[p],
                 used_turns: count(outcome.turns[p], "result turns")?,
-                parts: vec![],
+                parts: score_parts(view.player(PlayerId(p as u8)), catalog)?,
             },
-            card_names: vec![],
+            card_names: final_cards(view.player(PlayerId(p as u8)), catalog)?,
             resign_index: if resigned(p) { 0 } else { -1 },
             resignation_type: resigned(p).then_some(match ended {
                 Some("abandoned") => FORCED_RESIGNATION,
@@ -940,6 +942,65 @@ fn result(
         players,
         auto_continue: false,
     })
+}
+
+/// A player's score as dominion.games' score page lists it: a line per card that scores
+/// (or is a Victory card or Curse), one per Landmark, State or the like, and VP tokens on
+/// the card back.
+fn score_parts(
+    player: dominion_engine::PlayerView<'_>,
+    catalog: &WireCatalog,
+) -> Result<Vec<model::ScorePart>, ProjectionError> {
+    let explain = |name: &str| -> Result<model::LogEntry, ProjectionError> {
+        Ok(model::LogEntry::Named {
+            name: catalog.symbol("LogEntryNames", name)?,
+            depth: 0,
+            arguments: vec![],
+        })
+    };
+    let mut parts = player
+        .score_parts()
+        .into_iter()
+        .map(|part| {
+            Ok(model::ScorePart {
+                card_name: catalog.card(part.card)?,
+                points: part.vp,
+                frequency: count(part.count, "score part copies")?,
+                reserved: 0,
+                explanation: explain("EXPLAIN_POINTS_DUH")?,
+            })
+        })
+        .collect::<Result<Vec<_>, ProjectionError>>()?;
+    let tokens = player.vp_tokens();
+    if tokens != 0 {
+        parts.push(model::ScorePart {
+            card_name: super::catalog::BACK,
+            points: tokens,
+            frequency: tokens,
+            reserved: 0,
+            explanation: explain("EXPLAIN_POINTS_VP_TOKENS")?,
+        });
+    }
+    Ok(parts)
+}
+
+/// Every card a player ends the game with, by name.
+fn final_cards(
+    player: dominion_engine::PlayerView<'_>,
+    catalog: &WireCatalog,
+) -> Result<Vec<model::CardFrequency>, ProjectionError> {
+    let cards = player.final_cards().ok_or(ProjectionError::Inconsistent(
+        "result before the game ended",
+    ))?;
+    cards
+        .into_iter()
+        .map(|(card, n)| {
+            Ok(model::CardFrequency {
+                card_name: catalog.card(card)?,
+                frequency: count(n, "final card count")?,
+            })
+        })
+        .collect()
 }
 
 #[path = "projection/table.rs"]

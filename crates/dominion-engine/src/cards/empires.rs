@@ -526,7 +526,7 @@ impl SetRules for Rules {
         }
     }
 
-    fn bonus_vp(g: &Game, p: PlayerId) -> i32 {
+    fn bonus_vp(g: &Game, p: PlayerId, out: &mut Vec<(Card, i32)>) {
         let landmarks: Vec<Card> = g
             .landscapes()
             .iter()
@@ -534,7 +534,7 @@ impl SetRules for Rules {
             .filter(|l| l.set() == Set::Empires && l.kind() == Kind::Landmark)
             .collect();
         if landmarks.is_empty() {
-            return 0;
+            return;
         }
         let owned: Vec<CardId> = g.player(p).owned().collect();
         let mut counts: BTreeMap<Card, i32> = BTreeMap::new();
@@ -551,9 +551,8 @@ impl SetRules for Rules {
             }
             by_name.into_values().collect()
         };
-        landmarks
-            .into_iter()
-            .map(|l| match l {
+        out.extend(landmarks.into_iter().map(|l| {
+            let vp = match l {
                 Card::BanditFort => -2 * (count(Card::Silver) + count(Card::Gold)),
                 Card::Fountain => {
                     if count(Card::Copper) >= 10 {
@@ -614,8 +613,9 @@ impl SetRules for Rules {
                 Card::Wall => -(owned.len() as i32 - 15).max(0),
                 Card::WolfDen => -3 * counts.values().filter(|&&n| n == 1).count() as i32,
                 _ => 0,
-            })
-            .sum()
+            };
+            (l, vp)
+        }));
     }
 
     fn build_kingdom_pile(g: &mut Game, card: Card) -> bool {

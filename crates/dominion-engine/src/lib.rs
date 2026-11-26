@@ -37,7 +37,8 @@ pub use decision::{Decision, DecisionKind, Move, Opt, Purpose, Response, Respons
 pub use event::{Counter, Dest, Event, Marker};
 pub use game::{
     CardDeck, EndReason, ExtraLimit, ExtraTurn, Game, Lasting, Mat, Outcome, Phase, Pile,
-    PileGroup, PileKind, PileStructure, Player, STALL_ROUNDS, Scratch, Token, Turn, Until, Zone,
+    PileGroup, PileKind, PileStructure, Player, STALL_ROUNDS, ScorePart, Scratch, Token, Turn,
+    Until, Zone,
 };
 pub use ids::{CardId, PileId, PlayerId};
 pub use journal::{

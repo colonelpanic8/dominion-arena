@@ -40,6 +40,9 @@ const EXPANSIONS: &[&[&str]] = &[
     &["Rising Sun"],
     &[],
 ];
+/// Their card pool level that holds every card.
+const CARD_POOL_ALL: i32 = 10;
+
 fn bad<T>(message: &str) -> arena::Result<T> {
     Err(arena::Error::BadRequest(message.into()))
 }
@@ -152,6 +155,7 @@ pub(super) fn apply(
         (RuleValue::Double(value), 6) if *value <= 0.0 => {}
         (RuleValue::Double(value), 7) if *value >= 100.0 => {}
         (RuleValue::Ints(values), 21) if values.is_empty() => {}
+        (RuleValue::Int(CARD_POOL_ALL), 22) => {}
         (RuleValue::Text(value), 24) if value.is_empty() => {}
         _ => return bad("this official table rule has no equivalent Arena policy"),
     }
@@ -247,6 +251,29 @@ pub(super) fn details(
                 Group::Nobody
             }),
         ),
+        // Their client reads these rules wherever it shows a table, the score page's too.
+        rule(0, RuleValue::Boolean(false)),
+        rule(12, RuleValue::Ints(vec![])),
+        rule(
+            14,
+            RuleValue::PlayerOrder(if info.spec.randomize_order {
+                vec![]
+            } else {
+                players.iter().cloned().zip(0..).collect()
+            }),
+        ),
+        rule(
+            18,
+            RuleValue::Replay {
+                game_id: 0,
+                decision: 0,
+                players: vec![],
+            },
+        ),
+        rule(21, RuleValue::Ints(vec![])),
+        rule(22, RuleValue::Int(CARD_POOL_ALL)),
+        rule(23, RuleValue::Boolean(false)),
+        rule(24, RuleValue::Text(String::new())),
     ];
     let mut rules = rules;
     if !info.spec.timed || info.spec.clock.is_some() {

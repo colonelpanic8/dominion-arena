@@ -461,16 +461,16 @@ impl SetRules for Rules {
         })
     }
 
-    fn bonus_vp(g: &Game, p: PlayerId) -> i32 {
+    fn bonus_vp(g: &Game, p: PlayerId, out: &mut Vec<(Card, i32)>) {
         if !g.has_landscape(Card::PlateauShepherds) {
-            return 0;
+            return;
         }
         let twos = g
             .player(p)
             .owned()
             .filter(|&c| g.cost_of(c) == Cost::coins(2))
             .count() as u32;
-        2 * twos.min(g.player(p).favors) as i32
+        out.push((Card::PlateauShepherds, 2 * twos.min(g.player(p).favors) as i32));
     }
 
     fn build_kingdom_pile(g: &mut Game, card: Card) -> bool {

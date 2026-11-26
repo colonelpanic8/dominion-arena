@@ -575,6 +575,23 @@ impl<'a> PlayerView<'a> {
     pub fn score(&self) -> i32 {
         self.view.game.score(self.id)
     }
+
+    /// Where their VP come from, VP tokens aside ([`Game::score_parts`]).
+    pub fn score_parts(&self) -> Vec<crate::ScorePart> {
+        self.view.game.score_parts(self.id)
+    }
+
+    /// How many of each card they own, once the game is over and every card is shown for
+    /// scoring; before that, `None`: a deck's contents need not all be public.
+    pub fn final_cards(&self) -> Option<BTreeMap<Card, u32>> {
+        let game = self.view.game;
+        game.outcome()?;
+        let mut cards = BTreeMap::new();
+        for c in game.player(self.id).owned() {
+            *cards.entry(game.card(c)).or_default() += 1;
+        }
+        Some(cards)
+    }
 }
 
 /// A pile: everything about it is public but the cards under its top (and its top, if it
