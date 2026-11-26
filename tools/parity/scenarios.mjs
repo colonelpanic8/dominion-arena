@@ -4,6 +4,8 @@
 // only play cards whose questions the dominion.games transport maps
 // (`GET /api/official/coverage`); other cards are shown in an opening position.
 import { OFFICIAL_TRANSPORT } from './scenarios/official-transport.mjs';
+import { CARDS } from './scenarios/cards.mjs';
+
 const bigHand = (d) => d.name === 'Alice' && d.view.you.hand.count >= 10;
 // Kingdoms of the decision scenarios (the block at the end of the list).
 const BASE = ['Harbinger', 'Library', 'Militia', 'Throne Room', 'Vassal', 'Bandit', 'Bureaucrat', 'Moneylender', 'Poacher', 'Artisan'];
@@ -1207,11 +1209,12 @@ export const SCENARIOS = [
     steps: ['turns 6 Poet, Rustic Village, Silver', downToOne('Alice', 'Estate'), 'act'],
   },
   ...OFFICIAL_TRANSPORT,
+  ...CARDS,
 ];
 
 // Plays until one `card` is left and Alice, in her Buy phase with her Treasures played,
 // has $`price` for it.
-function lastOne(card, price, buys) {
+export function lastOne(card, price, buys) {
   const left = (d) => d.view.supply.find((p) => p.card === card)?.count;
   return async (driver) => {
     const treasures = (d) => d.decision.options.some((o) => o.action === 'play' && driver.is(o.card, 'Treasure'));
@@ -1230,7 +1233,7 @@ function attackTokens(t) {
 
 /// `n` turns, each buying the first card of `cards` its player doesn't have yet (else a
 /// Silver): a game that plays many different cards.
-async function collect(d, n, cards) {
+export async function collect(d, n, cards) {
   for (let i = 0; i < n; i++) {
     const x = await d.deciding();
     if (!x) return;
@@ -1241,7 +1244,7 @@ async function collect(d, n, cards) {
 
 // Answers every question the least it allows until `who` is asked something other than
 // a move of their turn.
-function asked(who) {
+export function asked(who) {
   return async (d) => {
     for (let i = 0; i < 200; i++) {
       const x = await d.deciding();
@@ -1254,7 +1257,7 @@ function asked(who) {
 }
 
 // Turns of buying `buys` until Alice, holding `card`, plays it and is asked something.
-function playAsking(card, buys) {
+export function playAsking(card, buys) {
   return async (d) => {
     for (let i = 0; i < 20; i++) {
       await d.step(`until Alice ${card}: ${buys.join(', ')}`);
@@ -1268,7 +1271,7 @@ function playAsking(card, buys) {
 }
 
 // Turns of buying `buys` until Alice can buy `card`, buys it and is asked something.
-function buyAsking(card, buys) {
+export function buyAsking(card, buys) {
   return async (d) => {
     for (let i = 0; i < 40; i++) {
       const x = await d.deciding();
@@ -1288,12 +1291,12 @@ function buyAsking(card, buys) {
   };
 }
 
-function pileCount(view, card) {
+export function pileCount(view, card) {
   return (view.supply ?? []).find((p) => p.card === card)?.count;
 }
 
 /// Turns until `who` starts one with one card left in `card`'s pile, which only they buy.
-function downToOne(who, card) {
+export function downToOne(who, card) {
   return async (d) => {
     for (let i = 0; i < 60; i++) {
       const x = await d.deciding();
@@ -1307,17 +1310,19 @@ function downToOne(who, card) {
 }
 
 /// `n` turns, each buying the first of `once` it can that its player hasn't bought yet,
-/// else the first of `then`; what is asked after buying X picks `piles[X]` if it can.
-function buyEach(n, once, then, piles = {}) {
+/// else the first of `then`; what is asked after buying X picks `piles[X]` if it can,
+/// and any other question the options naming `prefer` (a Way, an Ally).
+export function buyEach(n, once, then, piles = {}, prefer = []) {
   return async (d) => {
     const bought = {};
+    d.prefer = prefer;
     const answer = d.answer.bind(d);
     d.answer = async (dd, indices) => {
       for (const i of indices) {
         const o = (dd.decision.options ?? []).find((o) => o.index === i);
         if (o && (o.action === 'buy' || o.action === 'buy-landscape')) {
           (bought[dd.name] ??= new Set()).add(o.card);
-          d.prefer = piles[o.card] ? [piles[o.card]] : [];
+          d.prefer = [...(piles[o.card] ? [piles[o.card]] : []), ...prefer];
         }
       }
       return answer(dd, indices);
