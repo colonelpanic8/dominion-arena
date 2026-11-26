@@ -466,10 +466,13 @@ fn draw(
         (size == CardSize::Full && shape.basic && art.is_none()).then(|| basic_symbol(info));
     let set_icon = (size == CardSize::Full)
         .then(|| {
-            assets.file_url(&format!(
-                "images/elements/{}-small.png",
+            // dominion.games keeps cards removed from their sets in a set of their own.
+            let set = if info.removed {
+                "deprecated".to_string()
+            } else {
                 set_slug(&info.set)
-            ))
+            };
+            assets.file_url(&format!("images/elements/{set}-small.png"))
         })
         .flatten();
     let colors = layout::colors(info);
