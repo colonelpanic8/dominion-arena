@@ -23,7 +23,7 @@ body:has(.dt-root) .topbar { display: none; }
   position: absolute;
   inset: 0;
   background:
-    var(--dt-bg, linear-gradient(180deg, #6e8fa6 0%, #8aa77e 45%, #4f6b3c 100%)) center / cover no-repeat;
+    var(--dt-bg, linear-gradient(180deg, #6e8fa6 0%, #8aa77e 45%, #4f6b3c 100%)) right center / cover no-repeat;
   z-index: 0;
 }
 .dt-loading-text { position: absolute; left: 40%; top: 45%; }
@@ -460,7 +460,7 @@ button.dt-bar-rating:hover { border-color: #f0cf7a; background: rgba(240, 207, 1
   border: calc(0.2 * var(--vh)) solid #eee;
   z-index: 13100;
 }
-.dt-window-title { position: absolute; left: calc(1 * var(--vh)); top: calc(1 * var(--vh)); font-family: var(--title); font-size: calc(2.6 * var(--vh)); }
+.dt-window-title { position: absolute; left: 0; right: 0; top: calc(0.6 * var(--vh)); font-family: var(--title); font-size: calc(3.6 * var(--vh)); text-align: center; text-shadow: 2px 2px 0 #000; pointer-events: none; }
 .dt-window-empty { position: absolute; left: 0; right: 0; top: 45%; text-align: center; color: #aaa; }
 .dt-note { color: #ccc; font-size: calc(1.6 * var(--vh)); margin: 0; }
 .dt-window > .dt-note { position: absolute; left: calc(1 * var(--vh)); bottom: calc(0.5 * var(--vh)); }
