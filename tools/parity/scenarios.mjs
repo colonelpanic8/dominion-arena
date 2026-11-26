@@ -465,4 +465,202 @@ export const SCENARIOS = [
     },
     steps: ['villages', (d) => d.until(bigHand, ['Lost City', 'Council Room', 'Gold', 'Silver']), 'act'],
   },
+  // Player state and zones (parity round 3).
+  {
+    name: 'player-tokens',
+    about: 'VP tokens and Debt on the players, the −1 Card and −$1 tokens taken, the Journey token turned over',
+    spec: {
+      kingdom: ['Monument', 'Goons', 'Engineer', 'Relic', 'Bridge Troll', 'Ranger', 'Village', 'Smithy', 'Market', 'Cellar'],
+    },
+    steps: [
+      'turns 4 Monument, Ranger, Silver',
+      'turns 6 Relic, Bridge Troll, Monument, Silver',
+      'turn Engineer',
+      (d) => d.until((x) => x.name === 'Alice' && attackTokens(x.view.you?.tokens), ['Relic', 'Bridge Troll', 'Silver']),
+    ],
+  },
+  {
+    name: 'boons-kept',
+    about: 'a Boon kept until Clean-up (The Field\'s, Forest\'s or River\'s Gift)',
+    spec: {
+      kingdom: ['Bard', 'Blessed Village', 'Sacred Grove', 'Idol', 'Skulk', 'Werewolf', 'Village', 'Smithy', 'Market', 'Festival'],
+    },
+    steps: [
+      'villages',
+      'turns 8 Bard, Sacred Grove, Skulk, Silver',
+      (d) => d.until((x) => x.name === 'Alice' && x.view.you?.boons?.length, ['Gold', 'Werewolf', 'Silver']),
+    ],
+  },
+  {
+    name: 'hexes',
+    about: 'Hexes received: Deluded or Envious until the Buy phase, Miserable, a Plague Curse in hand',
+    spec: {
+      kingdom: ['Skulk', 'Cursed Village', 'Leprechaun', 'Werewolf', 'Tormentor', 'Village', 'Smithy', 'Market', 'Festival', 'Cellar'],
+    },
+    steps: [
+      'villages',
+      'turns 8 Skulk, Tormentor, Werewolf, Silver',
+      (d) => d.until((x) => x.name === 'Alice' && x.view.turn.phase === 'action' && x.view.you?.states?.some((s) => s === 'Deluded' || s === 'Envious'), ['Gold', 'Skulk', 'Silver']),
+    ],
+  },
+  {
+    name: 'heirlooms',
+    about: "every Heirloom in the starting deck, some in the first turn's hand",
+    spec: {
+      kingdom: ['Pooka', 'Secret Cave', 'Shepherd', 'Cemetery', 'Tracker', 'Pixie', 'Fool', 'Village', 'Smithy', 'Market'],
+    },
+    steps: [],
+  },
+  {
+    name: 'set-aside',
+    about: 'cards set aside by Prince, Summon, Cargo Ship, Crypt, Research, Haven, Gear, Church and Archive',
+    spec: {
+      kingdom: ['Crypt', 'Cargo Ship', 'Prince', 'Research', 'Haven', 'Gear', 'Church', 'Archive', 'Village', 'Smithy'],
+      landscapes: ['Summon'],
+    },
+    steps: [
+      'nights',
+      'prefer Copper, Estate, Village, Smithy',
+      'spree 18 Prince, Summon, Crypt, Research, Cargo Ship, Gold, Silver',
+      'act',
+    ],
+  },
+  {
+    name: 'thin-decks',
+    about: 'a big trash after Chapels, thin decks: an empty deck, discard pile or hand',
+    spec: {
+      kingdom: ['Chapel', 'Village', 'Smithy', 'Market', 'Moat', 'Militia', 'Cellar', 'Festival', 'Laboratory', 'Workshop'],
+    },
+    steps: ['prefer Estate, Copper', 'turns 14 Chapel, Gold, Silver', 'act'],
+  },
+  {
+    name: 'looked-at',
+    about: "cards looked at off the deck: Fortune Hunter offering a Treasure among them",
+    spec: {
+      kingdom: ['Cage', 'Grotto', 'Fortune Hunter', 'Sailor', 'Shaman', 'Buried Treasure', 'Cabin Boy', 'Crew', 'Flagship', 'Harbor Village'],
+    },
+    steps: [
+      'turns 6 Fortune Hunter, Silver',
+      (d) => d.until((x) => x.name === 'Alice' && x.view.turn.phase === 'action' && x.view.you.hand.known['Fortune Hunter'] && x.view.you.deck.count >= 5, ['Fortune Hunter', 'Silver']),
+      'play Fortune Hunter',
+    ],
+  },
+  {
+    name: 'champion',
+    about: 'Travellers exchanged up to Champion and Teacher, staying in play',
+    spec: {
+      kingdom: ['Page', 'Peasant', 'Village', 'Smithy', 'Market', 'Moat', 'Militia', 'Cellar', 'Festival', 'Laboratory'],
+    },
+    steps: ['villages', 'prefer Exchange', 'spree 40 Page, Peasant, Village', 'act'],
+  },
+  {
+    name: 'throne-duration',
+    about: 'Durations played by Throne Room and King\'s Court, kept in play with them into the next turn',
+    spec: {
+      kingdom: ['Throne Room', "King's Court", 'Caravan', 'Fishing Village', 'Wharf', 'Merchant Ship', 'Village', 'Smithy', 'Market', 'Cellar'],
+      colonies: true,
+    },
+    steps: [
+      'prefer Caravan, Fishing Village, Wharf, Merchant Ship',
+      'turns 10 King\'s Court, Throne Room, Caravan, Wharf, Silver',
+      'until Alice Throne Room+Caravan: Throne Room, Caravan, Fishing Village, Silver',
+      'play Throne Room',
+      'pick Caravan',
+      'turn Silver',
+      'turn Silver',
+    ],
+  },
+  {
+    name: 'mat-counters',
+    about: "Pirate Ship's coins, Sinister Plot's tokens and the Trade Route mat",
+    spec: {
+      kingdom: ['Pirate Ship', 'Trade Route', 'Village', 'Smithy', 'Market', 'Moat', 'Militia', 'Cellar', 'Festival', 'Laboratory'],
+      landscapes: ['Sinister Plot'],
+    },
+    steps: ['prefer Trash', 'turns 16 Sinister Plot, Pirate Ship, Trade Route, Duchy, Silver, Estate', 'act'],
+  },
+  {
+    name: 'nocturne-nights',
+    about: 'Night cards played: Night Durations in play (Cobbler, Den of Sin, Guardian, Ghost Town, Raider), Vampire, Exorcist',
+    spec: {
+      kingdom: ['Cobbler', 'Crypt', 'Den of Sin', 'Guardian', 'Ghost Town', 'Raider', 'Vampire', 'Exorcist', 'Necromancer', 'Sacred Grove'],
+    },
+    steps: ['nights', 'prefer Copper, Estate', 'spree 16 Vampire, Raider, Crypt, Sacred Grove, Den of Sin, Necromancer, Guardian, Ghost Town, Exorcist, Cobbler', 'act'],
+  },
+  {
+    name: 'renaissance-played',
+    about: 'Renaissance cards played and Projects bought: Canal lowering costs, Acting Troupe, Silk Merchant, Spices',
+    spec: {
+      kingdom: ['Acting Troupe', 'Cargo Ship', 'Research', 'Silk Merchant', 'Spices', 'Ducat', 'Lackeys', 'Sculptor', 'Villain', 'Seer'],
+      landscapes: ['Canal', 'Exploration', 'Guildhall', 'Silos'],
+    },
+    steps: ['turn Exploration', 'turn Exploration', 'turns 4 Canal, Guildhall, Silos, Silver', 'turns 12 Spices, Seer, Silk Merchant, Acting Troupe, Villain, Research, Lackeys, Silver', 'act'],
+  },
+  {
+    name: 'menagerie-played',
+    about: 'Menagerie: variable costs on the piles (Destrier, Fisherman, Wayfarer, Animal Fair), Horses gained, Barge and Gatekeeper in play',
+    spec: {
+      kingdom: ['Barge', 'Cavalry', 'Coven', 'Destrier', 'Fisherman', 'Gatekeeper', 'Groom', 'Paddock', 'Wayfarer', 'Animal Fair'],
+      landscapes: ['Ride', 'Bargain', 'Way of the Worm', 'Enclave'],
+    },
+    steps: ['prefer Horse', 'spree 16 Gatekeeper, Barge, Cavalry, Coven, Paddock, Groom, Ride, Silver', 'act'],
+  },
+  {
+    name: 'plunder-durations',
+    about: 'Plunder Durations in play, Traits on piles, Events (Deliver, Foray)',
+    spec: {
+      kingdom: ['Abundance', 'Cutthroat', 'Enlarge', 'Frigate', 'Gondola', 'Landing Party', 'Longship', 'Quartermaster', 'Rope', 'Secluded Shrine'],
+      landscapes: ['Deliver', 'Foray', 'Hasty', 'Patient'],
+    },
+    steps: ['spree 16 Longship, Frigate, Cutthroat, Quartermaster, Enlarge, Rope, Gondola, Secluded Shrine, Abundance, Silver', 'act'],
+  },
+  {
+    name: 'plunder-more',
+    about: 'Plunder: Siren, Stowaway, Taskmaster, Trickster, Wealthy Village, Mapmaker played; Tireless and Fated',
+    spec: {
+      kingdom: ['Siren', 'Stowaway', 'Taskmaster', 'Trickster', 'Wealthy Village', 'Mapmaker', 'Buried Treasure', 'Cabin Boy', 'Crew', 'Grotto'],
+      landscapes: ['Tireless', 'Fated', 'Invasion', 'Prosper'],
+    },
+    steps: ['villages', 'spree 16 Crew, Wealthy Village, Taskmaster, Siren, Trickster, Grotto, Stowaway, Cabin Boy, Mapmaker, Buried Treasure, Silver', 'act'],
+  },
+  {
+    name: 'rising-sun-shadows',
+    about: 'Shadow cards in the deck and played, Samurai and Snake Witch, a Prophecy',
+    spec: {
+      kingdom: ['Alley', 'Fishmonger', 'Ninja', 'Ronin', 'Tanuki', 'Samurai', 'Snake Witch', 'Artist', 'Craftsman', 'Gold Mine'],
+      landscapes: ['Credit', 'Biding Time'],
+    },
+    steps: ['villages', 'spree 14 Samurai, Ninja, Ronin, Tanuki, Snake Witch, Alley, Fishmonger, Silver', 'act'],
+  },
+  {
+    name: 'rising-sun-debt',
+    about: 'Rising Sun debt: Change, Litter, Root Cellar, Imperial Envoy, Daimyo bought and played; Debt owed',
+    spec: {
+      kingdom: ['Change', 'Daimyo', 'Imperial Envoy', 'Litter', 'Root Cellar', 'Village', 'Smithy', 'Market', 'Festival', 'Laboratory'],
+      landscapes: ['Continue', 'Harsh Winter'],
+    },
+    steps: ['villages', 'turns 12 Daimyo, Imperial Envoy, Litter, Root Cellar, Change, Silver', 'act'],
+  },
+  {
+    name: 'adventures-played',
+    about: 'Adventures: Miser\'s mat, Swamp Hag, Wine Merchant, Giant and the Journey token, Events putting tokens on piles',
+    spec: {
+      kingdom: ['Giant', 'Miser', 'Swamp Hag', 'Wine Merchant', 'Storyteller', 'Magpie', 'Messenger', 'Artificer', 'Port', 'Treasure Trove'],
+      landscapes: ['Ferry', 'Plan', 'Pathfinding', 'Training'],
+    },
+    steps: ['turns 8 Pathfinding, Training, Plan, Ferry, Silver', 'turns 12 Giant, Swamp Hag, Treasure Trove, Wine Merchant, Miser, Port, Magpie, Silver', 'act'],
+  },
+  {
+    name: 'adventures-attacks',
+    about: 'Adventures: Bridge Troll, Caravan Guard, Raze, Ranger, Lost City, Relic played; Ball, Borrow, Save, Raid',
+    spec: {
+      kingdom: ['Bridge Troll', 'Caravan Guard', 'Raze', 'Ranger', 'Lost City', 'Relic', 'Haunted Woods', 'Village', 'Smithy', 'Market'],
+      landscapes: ['Ball', 'Borrow', 'Save', 'Raid'],
+    },
+    steps: ['villages', 'turns 12 Bridge Troll, Relic, Lost City, Caravan Guard, Ranger, Raze, Silver', 'turn Raid', 'turn Raid', 'act'],
+  },
 ];
+
+function attackTokens(t) {
+  return t?.minusCard && t?.minusCoin;
+}

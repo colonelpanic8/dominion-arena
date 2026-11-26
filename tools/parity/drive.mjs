@@ -11,6 +11,7 @@
 //   "spree N A, B"  N turns buying as many of A, B, ... as each can, in that order
 //   "act"         play Actions, then Treasures, and stop before buying
 //   "villages"    from now on, turns play the Actions giving the most +Actions first
+//   "nights"      from now on, turns play Night cards in the Night phase
 //   "prefer X, Y" from now on, answer other questions with the options naming X or Y
 //                 where there are any ("prefer" alone: the least again)
 //   "until P X+Y & Q Z: A, B"  turns of "turn A, B" until P (Alice or Bob) starts a
@@ -119,6 +120,9 @@ export class Driver {
       case 'villages':
         this.villagesFirst = true;
         return;
+      case 'nights':
+        this.nights = true;
+        return;
       case 'prefer':
         this.prefer = list;
         return;
@@ -203,6 +207,11 @@ export class Driver {
       const treasure = opts.find((o) => o.action === 'play' && this.is(o.card, 'Treasure'));
       if (d.decision.phase === 'buy' && treasure) {
         await this.answer(d, [treasure.index]);
+        continue;
+      }
+      const night = this.nights && opts.find((o) => o.action === 'play' && this.is(o.card, 'Night'));
+      if (d.decision.phase === 'night' && night) {
+        await this.answer(d, [night.index]);
         continue;
       }
       const buy = d.decision.phase === 'buy' && buys.map((b) => opts.find((o) => buying(o) && o.card === b)).find(Boolean);
