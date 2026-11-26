@@ -593,13 +593,11 @@ fn active_opponent(b: &Board, chosen: Option<u8>) -> Option<u8> {
         .or_else(|| others.first().map(|o| o.seat))
 }
 
-/// The layout's inputs for a board. `deciding`: the shown seat has a decision open;
-/// `ended_turn`: whose turn the game ended on, once it has. Someone watching sees the
-/// kingdom drop on the turns of all but the first player.
+/// The layout's inputs for a board. `ended_turn`: whose turn the game ended on, once it
+/// has. Someone watching sees the kingdom drop on the turns of all but the first player.
 fn shape(
     b: &Board,
     settings: &dominion_protocol::api::WebSettings,
-    deciding: bool,
     ended_turn: Option<u8>,
 ) -> layout::Shape {
     let (victory, treasures) = supply::basic_columns(b);
@@ -618,7 +616,6 @@ fn shape(
             && b.front().is_some()
             && others_turn
             && !b.status.your_turn
-            && !deciding
             && !at_start(b),
     }
 }
@@ -727,7 +724,6 @@ pub fn TableGame(controls: Element) -> Element {
     let geometry = use_memo(move || {
         let (w, h) = viewport();
         let b = board_memo.read();
-        let deciding = ui.read().is_some();
         let ended_turn = b.as_ref().filter(|b| !b.status.running).and_then(|_| {
             let st = game.state.read();
             st.log
@@ -738,7 +734,7 @@ pub fn TableGame(controls: Element) -> Element {
         });
         let s = b
             .as_ref()
-            .map(|b| shape(b, &settings.read(), deciding, ended_turn))
+            .map(|b| shape(b, &settings.read(), ended_turn))
             .unwrap_or_default();
         Rc::new(layout::geometry(w, h, &s))
     });
